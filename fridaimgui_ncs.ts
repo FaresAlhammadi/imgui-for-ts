@@ -1,11 +1,20 @@
+/*
+ * fridaimgui_ncs.ts - the imgui menu + an "NCS MODS" tab for NightclubSimulater.
+ *
+ *   frida -U -l frida-il2cpp-bridge.js -l fridaimgui_ncs.ts "NightclubSimulater"
+ *
+ * Same library as fridaimgui.ts (keep the two in step). NCS MODS moves YOUR player only:
+ * walk speed, jump power, low gravity, noclip, and Fly (your fly.js, built in - it only loads the
+ * first time you switch Fly on).
+ */
 declare const Il2Cpp: any;
 
 declare const console: any;
 
-const MENU_TITLE     = "astraeus debug imgui";
+const MENU_TITLE     = "astraeus's great imgui";
 const DISCORD_URL    = "https://discord.gg/UxUGNmTKJG";
 const MENU_VERSION   = "v1.0";
-const MENU_HOLD_X    = false;
+const MENU_HOLD_X    = true;
 const SHOW_LASER     = true;
 const THEME          = "Skire";
 const ROW_LAYOUT     = false;
@@ -63,6 +72,9 @@ const HAND_MEMBERS: [string, string][] = [
 	["get_LeftHand", "get_RightHand"],
 ];
 
+// Built-in NCS script: your fly.js, embedded verbatim. Loaded the first time you switch Fly on.
+const BUILTIN_FLY_SRC = "// fly.js v7 \u2014 free fly for NightclubSimulater\n// frida -U -l frida-il2cpp-bridge.js -l fly.js \"NightclubSimulater\"\n//\n// v6 bug: NCSPlayerOwnModel's transform sits at world origin \u2014 it is a manager,\n// not the body. Reading position from it gave (0,0,0), so the target locked to\n// the origin and SetPositionAndRotation teleported the player there. v7 resolves\n// the actual moving transform and REFUSES to write until it looks sane.\n//\n// Run in this order:\n//   Mods.where()            print every candidate transform + position\n//   Mods.sticks(true)       live stick values \u2014 wiggle to confirm input reads\n//   Mods.fly(true)\n//   Mods.panic()            undo everything if it goes wrong\n\nvar C = {}, classCache = {}, booted = false, hooked = false;\nvar own = null, frames = 0, errSeen = {}, pending = [];\nvar flyOn = false, speed = 8.0, dbg = false, stickDbg = false, mode = \"api\";\nvar body = null, target = null, lastWrote = null, saved = {};\nvar fights = 0, samples = 0, driftSum = 0, dvx = 0, dvy = 0, dvz = 0, lastReport = 0;\nvar probeState = null;\nvar deadzone = 0.15, resyncTol = 0.5, holdTol = 0.05;\nvar heldRot = null, rotMode = \"upright\";\nvar useSetMove = false, syncNet = true, netTr = null, netOff = null, teleportTol = 3.0;\nvar netNested = false, manualOff = false, lastAuto = -999;\nvar noclip = true, flatMove = true, ccSaved = null;\n\nfunction err(w, e) {\n  var k = w + \"|\" + e;\n  if (errSeen[k]) return;\n  errSeen[k] = 1;\n  console.log(\"[fly][ERR] \" + w + \": \" + e);\n}\nfunction queue(fn) { pending.push(fn); }\n\nfunction findClass(name, ns) {\n  var key = (ns || \"*\") + \"::\" + name;\n  if (classCache[key] !== undefined) return classCache[key];\n  var asms = Il2Cpp.domain.assemblies;\n  for (var i = 0; i < asms.length; i++) {\n    var cs; try { cs = asms[i].image.classes; } catch (e) { continue; }\n    for (var j = 0; j < cs.length; j++) {\n      if (cs[j].name !== name) continue;\n      if (ns !== undefined && cs[j].namespace !== ns) continue;\n      classCache[key] = cs[j]; return cs[j];\n    }\n  }\n  classCache[key] = null; return null;\n}\n\nfunction init() {\n  if (booted) return;\n  C.Vector3   = findClass(\"Vector3\", \"UnityEngine\");\n  C.Quaternion = findClass(\"Quaternion\", \"UnityEngine\");\n  C.Time      = findClass(\"Time\", \"UnityEngine\");\n  C.Camera    = findClass(\"Camera\", \"UnityEngine\");\n  C.Component = findClass(\"Component\", \"UnityEngine\");\n  C.CC        = findClass(\"CharacterController\", \"UnityEngine\");\n  C.Own       = findClass(\"NCSPlayerOwnModel\", \"MTFrame.Contents.GamePlayer\");\n  C.Move      = findClass(\"HVRPlayerController\");\n  C.Inputs    = findClass(\"HVRPlayerInputs\");\n  C.NetT      = findClass(\"NetworkTransform\", \"Fusion\");\n  booted = true;\n}\n\nfunction vec3(x, y, z) {\n  var p = Memory.alloc(12);\n  p.writeFloat(x); p.add(4).writeFloat(y); p.add(8).writeFloat(z);\n  return new Il2Cpp.ValueType(p, C.Vector3.type);\n}\nfunction rd(v, n) {\n  var h = v.handle ? v.handle : v, o = {};\n  o.x = h.readFloat(); o.y = h.add(4).readFloat();\n  if (n > 2) o.z = h.add(8).readFloat();\n  return o;\n}\nfunction dt() { try { return C.Time.method(\"get_deltaTime\").invoke(); } catch (e) { return 0.0111; } }\nfunction now() { try { return C.Time.method(\"get_time\").invoke(); } catch (e) { return frames / 72.0; } }\n\n// ---------------------------------------------------------------- rotation\nfunction rdQ(v) {\n  var h = v.handle ? v.handle : v;\n  return { x: h.readFloat(), y: h.add(4).readFloat(), z: h.add(8).readFloat(), w: h.add(12).readFloat() };\n}\nfunction quat(q) {\n  var p = Memory.alloc(16);\n  p.writeFloat(q.x); p.add(4).writeFloat(q.y); p.add(8).writeFloat(q.z); p.add(12).writeFloat(q.w);\n  return new Il2Cpp.ValueType(p, C.Quaternion.type);\n}\n// Drop pitch and roll, keep yaw. Feeding head tilt into the rig is what put the\n// horizon on a diagonal \u2014 and it compounds every frame.\nfunction upright(q) {\n  var n = Math.sqrt(q.y * q.y + q.w * q.w);\n  if (n < 0.0001) return { x: 0, y: 0, z: 0, w: 1 };\n  return { x: 0, y: q.y / n, z: 0, w: q.w / n };\n}\nfunction trot(t) { try { return rdQ(t.method(\"get_rotation\").invoke()); } catch (e) { return null; } }\n\n// The transform Fusion.NetworkTransform actually syncs. If we move the rig but\n// not this, our client flies and everyone else sees us standing still.\nfunction netTransform() {\n  if (netTr && !netTr.handle.isNull()) return netTr;\n  if (!C.NetT || !own) return null;\n  try {\n    var go = own.method(\"get_gameObject\").invoke();\n    var c = go.method(\"GetComponentInChildren\", 2).invoke(C.NetT.type.object, true);\n    if (c && !c.handle.isNull()) {\n      netTr = c.method(\"get_transform\").invoke();\n      console.log(\"[fly] NetworkTransform found on [\" + tname(netTr) + \"]\");\n      return netTr;\n    }\n  } catch (e) { err(\"netTransform\", e); }\n  return null;\n}\n\nfunction tpos(t) { try { return rd(t.method(\"get_position\").invoke(), 3); } catch (e) { return null; } }\nfunction tname(t) {\n  try { return t.method(\"get_gameObject\").invoke().method(\"get_name\", 0).invoke().toString(); }\n  catch (e) { return \"?\"; }\n}\n\n// ---------------------------------------------------------------- accessors\nfunction mover() { try { return own.method(\"get_PlayerController\", 0).invoke(); } catch (e) { return null; } }\nfunction inputs() { try { return own.method(\"get_PlayerInputs\", 0).invoke(); } catch (e) { return null; } }\n\nfunction ccOf() {\n  var mc = mover(); if (!mc || !C.Move) return null;\n  var names = [];\n  C.Move.fields.forEach(function (f) {\n    if (!f.isStatic && f.type.name.indexOf(\"CharacterController\") >= 0) names.push(f.name);\n  });\n  for (var i = 0; i < names.length; i++) {\n    try { var v = mc.field(names[i]).value; if (v && !v.handle.isNull()) return v; } catch (e) { }\n  }\n  return null;\n}\n\n// every plausible \"this is the body\" transform, best first\nfunction candidates() {\n  var out = [];\n  var push = function (label, t) {\n    if (!t || t.handle.isNull()) return;\n    out.push({ label: label, t: t, name: tname(t), p: tpos(t) });\n  };\n  var c = ccOf();\n  if (c) { try { push(\"CharacterController\", c.method(\"get_transform\").invoke()); } catch (e) { } }\n  var mc = mover();\n  if (mc) { try { push(\"HVRPlayerController\", mc.method(\"get_transform\").invoke()); } catch (e) { } }\n  try {\n    var cam = C.Camera.method(\"get_main\").invoke();\n    if (cam && !cam.handle.isNull()) {\n      var ct = cam.method(\"get_transform\").invoke();\n      push(\"Camera.main\", ct);\n      push(\"Camera.root\", ct.method(\"get_root\").invoke());\n    }\n  } catch (e) { }\n  if (own) {\n    try { push(\"NCSPlayerOwnModel\", own.method(\"get_transform\").invoke()); } catch (e) { }\n    try { push(\"OwnModel.root\", own.method(\"get_transform\").invoke().method(\"get_root\").invoke()); } catch (e) { }\n  }\n  return out;\n}\n\n// pick the first candidate that is NOT parked at the origin\nfunction resolveBody() {\n  var cs = candidates();\n  for (var i = 0; i < cs.length; i++) {\n    var p = cs[i].p;\n    if (!p) continue;\n    if (Math.abs(p.x) < 0.01 && Math.abs(p.y) < 0.01 && Math.abs(p.z) < 0.01) continue;\n    body = cs[i];\n    console.log(\"[fly] body = \" + body.label + \" (\" + body.name + \") at \" +\n                p.x.toFixed(2) + \",\" + p.y.toFixed(2) + \",\" + p.z.toFixed(2));\n    return body;\n  }\n  body = null;\n  console.log(\"[fly] no usable body transform \u2014 every candidate is at the origin. Run Mods.where().\");\n  return null;\n}\n\n// ---------------------------------------------------------------- input\nfunction vec2Any(obj, klass, words) {\n  if (!obj || !klass) return null;\n  var got = null;\n  // properties\n  klass.methods.forEach(function (m) {\n    if (got || m.parameterCount !== 0 || m.name.indexOf(\"get_\") !== 0) return;\n    if (m.returnType.name.indexOf(\"Vector2\") < 0) return;\n    var n = m.name.toLowerCase();\n    for (var i = 0; i < words.length; i++) {\n      if (n.indexOf(words[i]) >= 0) { try { got = rd(obj.method(m.name, 0).invoke(), 2); } catch (e) { } return; }\n    }\n  });\n  if (got) return got;\n  // fields, including compiler backing fields\n  klass.fields.forEach(function (f) {\n    if (got || f.isStatic) return;\n    if (f.type.name.indexOf(\"Vector2\") < 0) return;\n    var n = f.name.toLowerCase();\n    for (var i = 0; i < words.length; i++) {\n      if (n.indexOf(words[i]) >= 0) { try { got = rd(obj.field(f.name).value, 2); } catch (e) { } return; }\n    }\n  });\n  return got;\n}\nfunction moveStick() { return vec2Any(inputs(), C.Inputs, [\"movementaxis\", \"moveaxis\", \"locomotion\", \"move\"]) || { x: 0, y: 0 }; }\nfunction turnStick() { return vec2Any(inputs(), C.Inputs, [\"turnaxis\", \"turn\"]) || { x: 0, y: 0 }; }\n\nfunction camBasis() {\n  try {\n    var cam = C.Camera.method(\"get_main\").invoke();\n    if (!cam || cam.handle.isNull()) return null;\n    var t = cam.method(\"get_transform\").invoke();\n    return { f: rd(t.method(\"get_forward\").invoke(), 3), r: rd(t.method(\"get_right\").invoke(), 3) };\n  } catch (e) { err(\"camBasis\", e); return null; }\n}\n\nfunction camT() {\n  try {\n    var cam = C.Camera.method(\"get_main\").invoke();\n    if (!cam || cam.handle.isNull()) return null;\n    return cam.method(\"get_transform\").invoke();\n  } catch (e) { return null; }\n}\n\n// Actively find out WHICH transform SetPositionAndRotation moves, instead of\n// assuming. Nudges up 2m, sees what changed, then puts you back.\nfunction startProbe() {\n  var ct = camT();\n  if (!ct || !own) { console.log(\"[fly] probe: no camera/player\"); return; }\n  var camA = tpos(ct);\n  var snap = {};\n  var cs = candidates();\n  for (var i = 0; i < cs.length; i++) snap[cs[i].label] = cs[i].p;\n  var V = { x: camA.x, y: camA.y + 2.0, z: camA.z };\n  try {\n    var rot = ct.method(\"get_rotation\").invoke();\n    own.method(\"SetPositionAndRotation\", 2).invoke(vec3(V.x, V.y, V.z), rot);\n  } catch (e) { err(\"probe write\", e); return; }\n  probeState = { at: frames, snap: snap, camA: camA, V: V };\n  console.log(\"[fly] probe: wrote \" + V.x.toFixed(2) + \",\" + V.y.toFixed(2) + \",\" + V.z.toFixed(2) + \" \u2014 measuring...\");\n}\n\nfunction finishProbe() {\n  var st = probeState; probeState = null;\n  console.log(\"=== probe result: what moved ===\");\n  var cs = candidates();\n  for (var i = 0; i < cs.length; i++) {\n    var before = st.snap[cs[i].label], after = cs[i].p;\n    if (!before || !after) continue;\n    var dx = after.x - before.x, dy = after.y - before.y, dz = after.z - before.z;\n    var d = Math.sqrt(dx * dx + dy * dy + dz * dz);\n    console.log(\"  \" + (d > 0.05 ? \"MOVED \" : \"      \") + cs[i].label +\n                \"  [\" + cs[i].name + \"]  delta \" + d.toFixed(2) + \"m\");\n  }\n  var ct = camT();\n  var camB = ct ? tpos(ct) : null;\n  if (camB) {\n    var cd = Math.sqrt(Math.pow(camB.x - st.camA.x, 2) + Math.pow(camB.y - st.camA.y, 2) + Math.pow(camB.z - st.camA.z, 2));\n    console.log(\"  camera moved \" + cd.toFixed(2) + \"m  => SetPositionAndRotation \" +\n                (cd > 0.05 ? \"WORKS\" : \"did nothing\"));\n    // put the player back: correct our written value by however far the camera drifted\n    if (cd > 0.05) {\n      try {\n        var rot = ct.method(\"get_rotation\").invoke();\n        own.method(\"SetPositionAndRotation\", 2).invoke(\n          vec3(st.V.x - (camB.x - st.camA.x), st.V.y - (camB.y - st.camA.y), st.V.z - (camB.z - st.camA.z)), rot);\n        console.log(\"  restored\");\n      } catch (e) { err(\"probe restore\", e); }\n    }\n  }\n}\n\n// ---------------------------------------------------------------- toggles\nfunction setGravity(zero) {\n  var mc = mover(); if (!mc) return;\n  var names = [];\n  C.Move.fields.forEach(function (f) {\n    if (f.isStatic) return;\n    var n = f.name.toLowerCase();\n    if (n.indexOf(\"gravity\") >= 0 || n.indexOf(\"fallspeed\") >= 0) names.push(f.name);\n  });\n  for (var i = 0; i < names.length; i++) {\n    try {\n      if (zero) {\n        if (saved[names[i]] === undefined) saved[names[i]] = mc.field(names[i]).value;\n        mc.field(names[i]).value = 0.0;\n      } else if (saved[names[i]] !== undefined) {\n        mc.field(names[i]).value = saved[names[i]];\n      }\n    } catch (e) { err(\"gravity/\" + names[i], e); }\n  }\n  console.log(\"[fly] gravity \" + (zero ? \"zeroed\" : \"restored\"));\n}\n\nfunction setNoclip(on) {\n  var c = ccOf();\n  if (!c) { console.log(\"[fly] no CharacterController \u2014 cannot noclip\"); return; }\n  try {\n    if (on) {\n      if (ccSaved === null) ccSaved = !!c.method(\"get_enabled\", 0).invoke();\n      c.method(\"set_enabled\").invoke(false);\n      console.log(\"[fly] noclip on (CharacterController disabled)\");\n    } else if (ccSaved !== null) {\n      c.method(\"set_enabled\").invoke(ccSaved);\n      ccSaved = null;\n      console.log(\"[fly] noclip off\");\n    }\n  } catch (e) { err(\"noclip\", e); }\n}\n\nfunction applyFly() {\n  if (!own) { err(\"apply\", \"no NCSPlayerOwnModel \u2014 load into the club\"); flyOn = false; return; }\n  if (flyOn) {\n    if (!resolveBody()) { flyOn = false; console.log(\"[fly] refusing to enable \u2014 no body transform\"); return; }\n    target = { x: body.p.x, y: body.p.y, z: body.p.z };\n    var q0 = trot(body.t);\n    heldRot = q0 ? upright(q0) : null;\n    lastWrote = null;\n    fights = samples = driftSum = 0; dvx = dvy = dvz = 0;\n    // remember how far the networked avatar sits from the body, so we can keep\n    // it in step rather than leaving it parked where we took off\n    netTr = null; netOff = null; netNested = false;\n    var nt = netTransform();\n    if (nt) {\n      // If our body already lives under the NetworkTransform, moving the body\n      // moves it too. Writing it again applies the motion twice and pins you.\n      try { netNested = !!body.t.method(\"IsChildOf\", 1).invoke(nt); } catch (e) { netNested = false; }\n      if (netNested) {\n        console.log(\"[fly] NetworkTransform is above the body \u2014 it follows automatically, skipping net write\");\n      } else {\n        var np = tpos(nt);\n        if (np) netOff = { x: np.x - body.p.x, y: np.y - body.p.y, z: np.z - body.p.z };\n        console.log(\"[fly] network avatar is separate \u2014 will drag it along\");\n      }\n    }\n  } else {\n    target = null; lastWrote = null; heldRot = null; netOff = null;\n  }\n  setGravity(flyOn);\n  if (noclip) setNoclip(flyOn);\n  // SetMove(false) also appears to stop whatever pushes position to the network\n  // avatar, which makes you invisible to everyone else. Off by default now.\n  if (useSetMove) {\n    try { own.method(\"SetMove\", 1).invoke(!flyOn); console.log(\"[fly] SetMove(\" + !flyOn + \")\"); }\n    catch (e) { err(\"SetMove\", e); }\n  }\n}\n\n// ---------------------------------------------------------------- write\nfunction writeTarget() {\n  if (!target || !body) return;\n  try {\n    if (mode === \"api\") {\n      var q = heldRot ? quat(heldRot) : body.t.method(\"get_rotation\").invoke();\n      own.method(\"SetPositionAndRotation\", 2).invoke(vec3(target.x, target.y, target.z), q);\n    } else {\n      body.t.method(\"set_position\").invoke(vec3(target.x, target.y, target.z));\n    }\n    lastWrote = { x: target.x, y: target.y, z: target.z };\n    // drag the networked avatar along so remote players see the flight\n    if (syncNet && netOff && !netNested) {\n      var nt = netTransform();\n      if (nt) {\n        try { nt.method(\"set_position\").invoke(vec3(target.x + netOff.x, target.y + netOff.y, target.z + netOff.z)); }\n        catch (e) { err(\"netWrite\", e); }\n      }\n    }\n  } catch (e) { err(\"write/\" + mode, e); }\n}\n\nfunction detect() {\n  if (!lastWrote || !body) return;\n  var p = tpos(body.t); if (!p) return;\n  var dx = p.x - lastWrote.x, dy = p.y - lastWrote.y, dz = p.z - lastWrote.z;\n  var d = Math.sqrt(dx * dx + dy * dy + dz * dz);\n  samples++;\n  if (d > 0.02) { fights++; driftSum += d; dvx += dx; dvy += dy; dvz += dz; }\n}\n\nfunction report() {\n  if (!dbg) return;\n  var t0 = now();\n  if (t0 - lastReport < 1.0) return;\n  lastReport = t0;\n  if (!samples) return;\n  if (!fights) console.log(\"[fly] writes holding (\" + samples + \" samples)\");\n  else console.log(\"[fly] overwritten \" + fights + \"/\" + samples +\n                   \"  avg \" + (driftSum / fights).toFixed(3) + \"m\" +\n                   \"  dir \" + (dvx / fights).toFixed(2) + \",\" + (dvy / fights).toFixed(2) + \",\" + (dvz / fights).toFixed(2));\n  fights = samples = driftSum = 0; dvx = dvy = dvz = 0;\n}\n\n// ---------------------------------------------------------------- frame\nfunction tick() {\n  frames++;\n  while (pending.length) { var fn = pending.shift(); try { fn(); } catch (e) { err(\"queued\", e); } }\n\n  if (probeState && frames - probeState.at >= 5) {\n    try { finishProbe(); } catch (e) { err(\"probe\", e); probeState = null; }\n  }\n\n  // Arm itself. Retries until the body resolves, and re-arms after a scene\n  // change, so there is nothing to type after loading the script.\n  if (!flyOn && !manualOff && own && frames - lastAuto > 120) {\n    lastAuto = frames;\n    flyOn = true;\n    applyFly();\n    if (flyOn) console.log(\"[fly] armed \u2014 left stick = gaze, right stick Y = up/down\");\n  }\n\n  if (stickDbg && frames % 20 === 0) {\n    var a = moveStick(), b2 = turnStick();\n    console.log(\"[fly] stick  move \" + a.x.toFixed(2) + \",\" + a.y.toFixed(2) +\n                \"   turn \" + b2.x.toFixed(2) + \",\" + b2.y.toFixed(2));\n  }\n  if (!flyOn || !own || !body) return;\n  try {\n    detect();\n    var b = camBasis(); if (!b) return;\n\n    // stick deadzone \u2014 noise near centre used to cause micro-writes every frame\n    var dzf = function (v) { return Math.abs(v) < deadzone ? 0 : v; };\n    var ms = moveStick(), ts = turnStick();\n    var msx = dzf(ms.x), msy = dzf(ms.y), tsy = dzf(ts.y);\n\n    var d = dt() * speed;\n    var mx, my, mz;\n    if (flatMove) {\n      // Creative-mode controls: left stick moves flat along where you're facing,\n      // right stick Y is the only thing that changes height. Looking down no\n      // longer drives you into the floor.\n      var fx = b.f.x, fz = b.f.z, fl = Math.sqrt(fx * fx + fz * fz);\n      if (fl > 0.001) { fx /= fl; fz /= fl; } else { fx = 0; fz = 1; }\n      var rx = b.r.x, rz = b.r.z, rl = Math.sqrt(rx * rx + rz * rz);\n      if (rl > 0.001) { rx /= rl; rz /= rl; } else { rx = 1; rz = 0; }\n      mx = (fx * msy + rx * msx) * d;\n      mz = (fz * msy + rz * msx) * d;\n      my = tsy * d;\n    } else {\n      mx = (b.f.x * msy + b.r.x * msx) * d;\n      my = (b.f.y * msy) * d + tsy * d;\n      mz = (b.f.z * msy + b.r.z * msx) * d;\n    }\n    var moving = (mx !== 0 || my !== 0 || mz !== 0);\n\n    // Cooperate with SMALL external movement (head motion, network smoothing)\n    // by adopting it as the new target. Fighting it every frame is the shake.\n    // Only a large jump \u2014 a real snap-back \u2014 is worth arguing with.\n    var actual = tpos(body.t);\n    var off = 0;\n    if (actual) {\n      off = Math.sqrt(Math.pow(actual.x - target.x, 2) +\n                      Math.pow(actual.y - target.y, 2) +\n                      Math.pow(actual.z - target.z, 2));\n      if (off < resyncTol) {\n        // small \u2014 head motion or network smoothing. Adopt it; fighting shakes.\n        target.x = actual.x; target.y = actual.y; target.z = actual.z; off = 0;\n      } else if (off > teleportTol) {\n        // huge \u2014 the game deliberately moved us (spawn, respawn, transfer, car).\n        // Dragging the player back out of that is what \"breaks\" spawning.\n        target.x = actual.x; target.y = actual.y; target.z = actual.z; off = 0;\n        var qt = trot(body.t); if (qt) heldRot = (rotMode === \"live\") ? qt : upright(qt);\n        netOff = null;\n        var nt2 = netTransform();\n        if (nt2) {\n          try { netNested = !!body.t.method(\"IsChildOf\", 1).invoke(nt2); } catch (e) { }\n          if (!netNested) {\n            var np2 = tpos(nt2);\n            if (np2) netOff = { x: np2.x - actual.x, y: np2.y - actual.y, z: np2.z - actual.z };\n          }\n        }\n        console.log(\"[fly] game teleported us \u2014 following instead of fighting\");\n      }\n      // in between: a genuine snap-back worth arguing with, so keep our target\n    }\n\n    target.x += mx; target.y += my; target.z += mz;\n\n    // Idle and already in place? Write nothing at all. Gravity is zeroed, so\n    // you hover on your own without us touching the transform.\n    if (moving || off > holdTol) {\n      writeTarget();\n    } else {\n      // Not writing this frame \u2014 so whatever rotation the game has now is\n      // authoritative. Re-capture it (upright) so snap-turn still works.\n      var q = trot(body.t);\n      if (q) heldRot = (rotMode === \"live\") ? q : upright(q);\n    }\n    report();\n  } catch (e) { err(\"tick\", e); }\n}\n\nfunction installHook() {\n  if (hooked) return;\n  if (!C.Own) { err(\"hook\", \"NCSPlayerOwnModel not found\"); return; }\n  try {\n    var m = C.Own.method(\"LateUpdate\", 0);\n    Interceptor.attach(m.virtualAddress, {\n      onEnter: function (args) { own = new Il2Cpp.Object(args[0]); },\n      onLeave: function () { tick(); }\n    });\n    hooked = true;\n    console.log(\"[fly] hooked NCSPlayerOwnModel.LateUpdate\");\n  } catch (e) { err(\"hook\", e); }\n}\n\n// ---------------------------------------------------------------- api\nvar Mods = {\n  where: function () {\n    queue(function () {\n      console.log(\"=== candidate body transforms ===\");\n      var cs = candidates();\n      for (var i = 0; i < cs.length; i++) {\n        var p = cs[i].p;\n        console.log(\"  \" + cs[i].label + \"  [\" + cs[i].name + \"]  \" +\n                    (p ? p.x.toFixed(2) + \", \" + p.y.toFixed(2) + \", \" + p.z.toFixed(2) : \"?\"));\n      }\n      console.log(\"(the one matching where you actually are is the body)\");\n    });\n    return \"queued\";\n  },\n  probe: function () { queue(startProbe); return \"queued \u2014 result in ~5 frames\"; },\n  fly: function (on) {\n    flyOn = (on === undefined) ? !flyOn : !!on;\n    manualOff = !flyOn;\n    queue(function () { applyFly(); console.log(\"[fly] fly = \" + flyOn); });\n    return \"queued\";\n  },\n  panic: function () {\n    queue(function () {\n      flyOn = false; manualOff = true; target = null; lastWrote = null;\n      setNoclip(false);\n      setGravity(false);\n      try { own.method(\"SetMove\", 1).invoke(true); } catch (e) { }\n      console.log(\"[fly] panic \u2014 movement restored, gravity back, fly off\");\n    });\n    return \"queued\";\n  },\n  speed: function (s) { if (s !== undefined) speed = s; return speed; },\n  deadzone: function (v) { if (v !== undefined) deadzone = v; console.log(\"[fly] deadzone = \" + deadzone); return deadzone; },\n  rot: function (m) { if (m) rotMode = (m === \"live\" ? \"live\" : \"upright\"); console.log(\"[fly] rot = \" + rotMode); return rotMode; },\n  noclip: function (v) { if (v !== undefined) noclip = !!v; queue(function () { if (flyOn) setNoclip(noclip); }); console.log(\"[fly] noclip = \" + noclip); return noclip; },\n  gaze: function (v) { flatMove = !v; console.log(\"[fly] controls = \" + (flatMove ? \"flat joystick\" : \"gaze\")); return !flatMove; },\n  setmove: function (v) { useSetMove = !!v; console.log(\"[fly] useSetMove = \" + useSetMove); return useSetMove; },\n  syncNet: function (v) { if (v !== undefined) syncNet = !!v; console.log(\"[fly] syncNet = \" + syncNet); return syncNet; },\n  teleportTol: function (v) { if (v !== undefined) teleportTol = v; console.log(\"[fly] teleportTol = \" + teleportTol); return teleportTol; },\n  netpos: function () {\n    queue(function () {\n      var nt = netTransform();\n      if (!nt) { console.log(\"[fly] no Fusion.NetworkTransform found\"); return; }\n      var np = tpos(nt), bp = body ? tpos(body.t) : null;\n      console.log(\"network avatar : \" + (np ? np.x.toFixed(2) + \",\" + np.y.toFixed(2) + \",\" + np.z.toFixed(2) : \"?\") + \"  [\" + tname(nt) + \"]\");\n      console.log(\"your body      : \" + (bp ? bp.x.toFixed(2) + \",\" + bp.y.toFixed(2) + \",\" + bp.z.toFixed(2) : \"?\"));\n      if (np && bp) {\n        var d = Math.sqrt(Math.pow(np.x - bp.x, 2) + Math.pow(np.y - bp.y, 2) + Math.pow(np.z - bp.z, 2));\n        console.log(\"gap            : \" + d.toFixed(2) + \"m  \" +\n                    (d > 2 ? \"<= this is why nobody can see you fly\" : \"(in step)\"));\n      }\n    });\n    return \"queued\";\n  },\n  level: function () {\n    queue(function () {\n      var q = trot(body ? body.t : null);\n      heldRot = q ? upright(q) : { x: 0, y: 0, z: 0, w: 1 };\n      writeTarget();\n      console.log(\"[fly] levelled\");\n    });\n    return \"queued\";\n  },\n  resyncTol: function (v) { if (v !== undefined) resyncTol = v; console.log(\"[fly] resyncTol = \" + resyncTol); return resyncTol; },\n  holdTol: function (v) { if (v !== undefined) holdTol = v; console.log(\"[fly] holdTol = \" + holdTol); return holdTol; },\n  diag: function (v) { dbg = !!v; return dbg; },\n  sticks: function (v) { stickDbg = !!v; return stickDbg; },\n  mode: function (m) { if (m) mode = (m === \"transform\" ? \"transform\" : \"api\"); console.log(\"[fly] mode = \" + mode); return mode; },\n  rebind: function () { queue(function () { resolveBody(); if (body) target = { x: body.p.x, y: body.p.y, z: body.p.z }; }); return \"queued\"; },\n\n  lateHook: function (name, ns, method) {\n    queue(function () {\n      var k = findClass(name, ns);\n      if (!k) { console.log(\"!! \" + name + \" not found\"); return; }\n      var mn = method || \"LateUpdate\";\n      try {\n        Interceptor.attach(k.method(mn, 0).virtualAddress, { onLeave: function () { if (flyOn) writeTarget(); } });\n        console.log(\"[fly] late rewrite attached to \" + k.type.name + \".\" + mn);\n      } catch (e) { err(\"lateHook\", e); }\n    });\n    return \"queued\";\n  },\n\n  dumpClass: function (name, ns) {\n    var k = findClass(name, ns);\n    if (!k) { console.log(\"!! \" + name + \" not found\"); return; }\n    console.log(\"=== \" + k.type.name + \" ===\");\n    k.fields.forEach(function (f) { console.log(\"  F \" + f.type.name + \" \" + f.name + (f.isStatic ? \" [static]\" : \"\")); });\n    k.methods.forEach(function (m) { console.log(\"  M \" + m.returnType.name + \" \" + m.name + \"/\" + m.parameterCount); });\n  }\n};\n\nglobalThis.Mods = Mods;\n\nIl2Cpp.perform(function () {\n  init();\n  installHook();\n  console.log(\"[fly] v10 \u2014 auto-arms once you are in the club, nothing to type\");\n  console.log(\"[fly] Mods.fly(false) to stop \u00b7 Mods.panic() to restore \u00b7 Mods.speed(12)\");\n});\n";
+
 function ref<T>(v: T): { v: T } { return { v }; }
 
 const S = {
@@ -117,6 +129,7 @@ function onUpdate(): void {
 function drawMenu(ui: any): void {
 	if (ui.begin(MENU_TITLE)) {
 		ui.beginTabBar("tabs");
+		if (ui.tabItem("NCS MODS")) ui.ncsMods();
 
 		if (ui.tabItem("Player")) {
 			if (ui.collapsingHeader("Movement", true)) {
@@ -2081,6 +2094,125 @@ Il2Cpp.perform(() => {
 		return true;
 	}
 
+	// ══════════════════════════════════════════════════════════════════════════
+	//  NCS MODS (NightclubSimulater) - movement for YOUR player only
+	//  HurricaneVR.Framework.Core.Player.HVRPlayerController fields:
+	//    MoveSpeed, RunSpeed, JumpVelocity, Gravity, MaxFallSpeed, CanJump,
+	//    <CharacterController>k__BackingField
+	//  The local controller is taken from NCSPlayerOwnModel.get_PlayerController, so only
+	//  your own rig is ever touched (never another player's).
+	// ══════════════════════════════════════════════════════════════════════════
+	const NCS = { speed: ref(1.0), jump: ref(1.0), lowGrav: ref(false), noclip: ref(false) };
+	const ncsPCCls = findClassAnywhere("HurricaneVR.Framework.Core.Player.HVRPlayerController");
+	const ncsOwnCls = findClassAnywhere("MTFrame.Contents.GamePlayer.NCSPlayerOwnModel");
+	const ncs = { pc: null as any, base: null as any, cc: null as any, ccWas: null as boolean | null,
+	              nextScan: 0, nextApply: 0, status: "not searched yet", applied: false };
+
+	function ncsGet(pc: any, name: string): any { try { return pc.field(name).value; } catch { return undefined; } }
+	function ncsSet(pc: any, name: string, v: any) { try { pc.field(name).value = v; } catch (e) { errOnce("NCS " + name, e); } }
+
+	function ncsController(): any {
+		if (ncs.pc && alive(ncs.pc)) return ncs.pc;
+		if (ncs.pc) { ncs.pc = null; ncs.base = null; ncs.cc = null; ncs.ccWas = null; ncs.status = "player changed - searching"; }
+		const now = Date.now();
+		if (now < ncs.nextScan) return null;
+		ncs.nextScan = now + 2000;                     // lookups are expensive; retry every 2s
+		let pc: any = null;
+		const own = ncsOwnCls ? objectOf(ncsOwnCls) : null;
+		if (own) { try { const c = own.method("get_PlayerController", 0).invoke(); if (c && !c.isNull()) pc = c; } catch {} }
+		if (!pc && ncsPCCls) {                          // fallback: only if there is exactly one controller (= yours)
+			const all = objectsOf(ncsPCCls);
+			if (all.length === 1) pc = all[0];
+		}
+		if (!pc) { ncs.status = own ? "player found, controller not ready" : "not in the club yet"; return null; }
+		ncs.pc = keep(pc);
+		ncs.base = {
+			move: ncsGet(pc, "MoveSpeed"), run: ncsGet(pc, "RunSpeed"), jump: ncsGet(pc, "JumpVelocity"),
+			grav: ncsGet(pc, "Gravity"), fall: ncsGet(pc, "MaxFallSpeed"),
+		};
+		ncs.status = "controller found (walk " + Number(ncs.base.move).toFixed(1) + ", jump " + Number(ncs.base.jump).toFixed(1) + ")";
+		log("NCS: " + ncs.status);
+		return ncs.pc;
+	}
+
+	function ncsActive(): boolean {
+		return NCS.speed.v !== 1 || NCS.jump.v !== 1 || NCS.lowGrav.v || NCS.noclip.v;
+	}
+
+	// Runs every frame from the main tick, but only does work 4x a second, and only while
+	// something is switched on (or needs restoring).
+	function ncsTick() {
+		if (!ncsPCCls) return;
+		const now = Date.now();
+		if (now < ncs.nextApply) return;
+		ncs.nextApply = now + 250;
+		const active = ncsActive();
+		if (!active && !ncs.applied) return;            // nothing on, nothing to put back
+		const pc = ncsController();
+		if (!pc || !ncs.base) return;
+		const b = ncs.base;
+		// re-applied every 250ms because the game can reset these (respawn, vehicles, menus)
+		if (typeof b.move === "number") ncsSet(pc, "MoveSpeed", b.move * NCS.speed.v);
+		if (typeof b.run === "number") ncsSet(pc, "RunSpeed", b.run * NCS.speed.v);
+		if (typeof b.jump === "number") ncsSet(pc, "JumpVelocity", b.jump * NCS.jump.v);
+		if (typeof b.grav === "number") ncsSet(pc, "Gravity", NCS.lowGrav.v ? b.grav * 0.15 : b.grav);
+		if (typeof b.fall === "number") ncsSet(pc, "MaxFallSpeed", NCS.lowGrav.v ? b.fall * 0.3 : b.fall);
+		if (NCS.jump.v !== 1) ncsSet(pc, "CanJump", true);
+		// noclip = your CharacterController off, so nothing blocks you
+		if (!ncs.cc || !alive(ncs.cc)) {
+			ncs.cc = null;
+			const cc = ncsGet(pc, "<CharacterController>k__BackingField");
+			if (cc && !cc.isNull()) ncs.cc = keep(cc);
+		}
+		if (ncs.cc) {
+			if (NCS.noclip.v) {
+				if (ncs.ccWas === null) { const was = call(ncs.cc, "get_enabled"); ncs.ccWas = was === null ? true : !!was; }
+				call(ncs.cc, "set_enabled", false);
+			} else if (ncs.ccWas !== null) {
+				call(ncs.cc, "set_enabled", ncs.ccWas);
+				ncs.ccWas = null;
+			}
+		}
+		ncs.applied = active;                            // after a full restore, stop touching the controller
+	}
+
+	function ncsReset() {
+		NCS.speed.v = 1; NCS.jump.v = 1; NCS.lowGrav.v = false; NCS.noclip.v = false;
+		ncs.nextApply = 0;                               // restore on the next frame
+		notify("Movement reset");
+	}
+
+	function ncsMods() {
+		if (!ncsPCCls) {
+			text("HVRPlayerController not found - this tab is for NightclubSimulater.", [1, 0.45, 0.5, 1]);
+			return;
+		}
+		if (collapsingHeader("Movement", true)) {
+			sliderFloat("Walk Speed", NCS.speed, 1, 5, 1);
+			sliderFloat("Jump Power", NCS.jump, 1, 5, 1);
+			checkbox("Low Gravity", NCS.lowGrav, "floaty jumps, slow falls");
+			checkbox("Noclip", NCS.noclip, "walk through walls");
+			if (button("Reset Movement")) ncsReset();
+			text("Status: " + ncs.status, C.TextDisabled);
+		}
+		if (collapsingHeader("Fly", true)) flySection();
+	}
+
+	// ── Fly: drives your fly.js (global Mods) ──
+	const FLY = { on: ref(false), speed: ref(8), noclip: ref(true), gaze: ref(false) };
+	function flySection() {
+		let M: any = (globalThis as any).Mods;
+		if (checkbox("Fly", FLY.on, "left stick moves, right stick Y = up / down")) {
+			if (!M && FLY.on.v) { loadBuiltin("fly.js"); M = (globalThis as any).Mods; if (M) { M.speed(FLY.speed.v); M.noclip(FLY.noclip.v); M.gaze(FLY.gaze.v); } }
+			if (M) M.fly(FLY.on.v); else if (FLY.on.v) { FLY.on.v = false; notify("fly.js failed to load - see Plugins"); }
+		}
+		if (!M) { text("fly.js: " + builtinState["fly.js"], C.TextDisabled); return; }
+		if (sliderFloat("Fly Speed", FLY.speed, 2, 30, 0)) M.speed(FLY.speed.v);
+		if (checkbox("Noclip While Flying", FLY.noclip, "pass through walls in the air")) M.noclip(FLY.noclip.v);
+		if (checkbox("Look To Fly", FLY.gaze, "fly where you look instead of level")) M.gaze(FLY.gaze.v);
+		if (button("Panic (restore everything)")) { M.panic(); FLY.on.v = false; notify("Fly: restored"); }
+	}
+
 	interface Plugin {
 		name: string; file: string; builtin: boolean; status: string; logs: string[];
 		draw: ((ui: any) => void) | null; frame: (() => void) | null; fails: number;
@@ -2143,6 +2275,8 @@ Il2Cpp.perform(() => {
 	log("plugins: hook tracking - Interceptor.attach " + (attachOK ? "yes" : "NO") + ", Interceptor.replace " + (replaceOK ? "yes" : "NO") +
 		", method.implementation " + (implHookOK ? "yes" : "NO"));
 	const pluginList: Plugin[] = [];
+	const BUILTIN_NAMES = ["fly.js"];
+	const baseName = (f: string) => f.replace(/^\d+_/, "").toLowerCase();       // "1790..._fly.js" -> "fly.js"
 	let pluginDir = "", pluginsScanned = false, pluginScanPending = false;
 
 	function libc(name: string, ret: string, args: string[]): any {
@@ -2266,6 +2400,18 @@ Il2Cpp.perform(() => {
 	function setPlugin(pl: Plugin, on: boolean) {
 		(globalThis as any).__imguiMain(() => { on ? enablePlugin(pl) : disablePlugin(pl); if (pl.toggle) pl.toggle.v = !!pl.enabled; });
 	}
+	// The built-in fly.js loads the first time you switch Fly on (from the menu, on the game thread),
+	// so loading the menu itself installs nothing beyond the universal build's hooks.
+	const builtinState: { [k: string]: string } = { "fly.js": "not loaded - loads when you turn it on" };
+	function loadBuiltin(file: "fly.js"): boolean {
+		if (pluginList.some(p => p.builtin && p.file === file)) return true;
+		const pl: Plugin = { name: "Fly", file, builtin: true, status: "loading", logs: [], draw: null, frame: null, fails: 0 };
+		pluginList.push(pl);
+		log("loading built-in " + file);
+		runPlugin(pl, BUILTIN_FLY_SRC);
+		builtinState[file] = pl.status;
+		return pl.status === "loaded";
+	}
 	function scanPlugins(): number {
 		if (!pluginDir) return 0;
 		if (c_mkdir) try { c_mkdir(Memory.allocUtf8String(pluginDir), 0o771); } catch {}
@@ -2279,6 +2425,10 @@ Il2Cpp.perform(() => {
 		let added = 0;
 		for (const f of files) {
 			if (pluginList.some(p => p.file === f)) continue;
+			if (BUILTIN_NAMES.includes(baseName(f))) {
+				pluginList.push({ name: f, file: f, builtin: false, status: "skipped - already built in", logs: [], draw: null, frame: null, fails: 0 });
+				continue;
+			}
 			let code = "";
 			try { code = (File as any).readAllText(pluginDir + "/" + f); }
 			catch (e) { pluginList.push({ name: f, file: f, builtin: false, status: "can't read: " + e, logs: [], draw: null, frame: null, fails: 0 }); continue; }
@@ -2415,6 +2565,8 @@ Il2Cpp.perform(() => {
 			for (const l of pl.logs) text(l, C.TextDisabled);
 			unindent(12);
 		}
+		spacing();
+		text("Built in (NCS MODS tab): fly.js: " + (pluginList.some(p => p.builtin && p.file === "fly.js") ? "loaded" : builtinState["fly.js"].split(" - ")[0]), C.TextDisabled);
 	}
 	function hookCount(pl: Plugin): number {
 		const addrs = new Set([...(pl.impls ?? []).map(r => String(r.addr)), ...(pl.replaced ?? []).map(String)]);
@@ -2433,6 +2585,7 @@ Il2Cpp.perform(() => {
 		off: (name: string) => { const p = findPlugin(name); if (p) setPlugin(p, false); return p ? "switching off " + p.file : "no plugin " + name; },
 	};
 	const filePlugins = () => pluginList.filter(p => !p.builtin && !p.status.startsWith("skipped"));
+	(globalThis as any).ncs = { state: NCS, reset: ncsReset, load: (f: "fly.js") => loadBuiltin(f) };
 
 	const setSize = ref(MENU_SIZE), setWidth = ref(style.width), setLaser = ref(SHOW_LASER), setHold = ref(MENU_HOLD_X ? 0 : 1);
 	const setRounding = ref(style.rounding), setTabH = ref(style.pageMode), setWrist = ref(WRIST_MENU ? 0 : 1);
@@ -3198,7 +3351,7 @@ Il2Cpp.perform(() => {
 	const ui = {
 		begin, end, text, textColored: (c: number[], s: string) => text(s, c), textDisabled: (s: string) => text(s, C.TextDisabled),
 		button, checkbox, sliderFloat, sliderInt, combo, collapsingHeader, separator, spacing, sameLine, indent, unindent,
-		progressBar, beginTabBar, tabItem, endTabBar, treeNode, treePop, inputText, listBox, settings, info, notify, confirm, openUrl, style, ref,
+		progressBar, beginTabBar, tabItem, endTabBar, ncsMods, treeNode, treePop, inputText, listBox, settings, info, notify, confirm, openUrl, style, ref,
 		pluginsTab, plugins: () => filePlugins(), pluginPage, debugTab, filePath, pluginDir: pluginDirStr,
 		theme: (name: string) => applyTheme(name), themes: () => THEME_NAMES.slice(),
 		fonts: () => loadedFonts.map(f => f.name),
@@ -3286,6 +3439,7 @@ Il2Cpp.perform(() => {
 		if (WINDOW_PATTERN && !patternTried) patternStep(2);
 		if (!greeted) { greeted = true; notify(MENU_TITLE + " loaded"); }
 		try { onUpdate(); } catch (e) { errOnce("onUpdate", e); }
+		try { ncsTick(); } catch (e) { errOnce("NCS mods", e); }
 		try { pluginsFrame(); } catch (e) { errOnce("plugins", e); }
 
 		const now = Date.now(), dt = Math.min(0.1, Math.max(0.001, (now - lastTickMs) / 1000));

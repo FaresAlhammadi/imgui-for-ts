@@ -21,7 +21,7 @@ const HUD_FONT       = 22;
 const UI_SCALE       = 0.00042;
 const WRIST_MENU     = true;
 const WRIST_OFFSET   = [0.12, 0.04, 0.02];
-const ROUNDING       = 3;
+const ROUNDING       = 6;
 const PAGE_HEIGHT    = 560;
 const ALWAYS_ON_TOP  = true;
 const STABILIZE      = true;
@@ -35,7 +35,7 @@ const TRIG_THRESH    = 0.55;
 const CLASSIC_TITLE  = true;
 const MENU_KEYBOARD  = true;
 const PIXEL_FONT     = true;
-const TAB_ROUNDING   = 0;
+const TAB_ROUNDING   = 9;
 const FONT_PREFERENCE = ["RobotoMono-Medium", "RobotoMono-Regular", "CourierPrime", "LiberationMono", "consola", "LiberationSans", "Roboto-Regular"];
 
 const EXTRA_FRAME_HOOKS = ["HurricaneVR.Framework.Core.Player.HVRPlayerController",
@@ -1784,7 +1784,7 @@ Il2Cpp.perform(() => {
 			const i = filtered[fi], iy = listY + vr * rowH;
 			const ib = behavior(id + "/" + i, lx, iy, lw, rowH);
 			const bg = i === r.v ? C.HeaderActive : ib.hov ? C.HeaderHovered : (fi % 2 ? (C.ListRowAlt ?? C.FrameBg) : (C.ListRow ?? C.FrameBg));
-			R(lx, iy, lw - (maxScroll > 0 ? 10 : 0), rowH, bg, L_FRAME);
+			RR(lx, iy + 1, lw - (maxScroll > 0 ? 10 : 0), rowH - 2, bg, L_FRAME);
 			T(lx + 10, iy, lw - 20, rowH, items[i], C.Text, ALIGN_LEFT, L_FRAME);
 			if (ib.clicked) { r.v = i; changed = true; }
 		}
@@ -1877,12 +1877,14 @@ Il2Cpp.perform(() => {
 			if (n > 0 && sum !== undefined) padX = Math.max(4, Math.min(padX, (fullW() - gap * (n - 1) - sum) / (2 * n)));
 			bar.textSum = (bar.textSum ?? 0) + txw;
 			const tw = style.tabsFill && n > 0 ? (fullW() - gap * (n - 1)) / n : txw + padX * 2;
-			const x = bar.nx;
+			const x = bar.nx, idx = bar.n;
 			bar.nx += tw + gap; bar.n++;
+			// one connected strip: only its outer ends are rounded (left end on the first tab, right end on the last)
+			const ends = (idx === 0 ? 1 | 8 : 0) | (n > 0 && idx === n - 1 ? 2 | 4 : 0);
 			const b = behavior(tid, x, bar.y, tw, bar.h);
 			if (b.clicked) tabNext.set(bar.id, tid);
 			sel = tabSel.get(bar.id) === tid;
-			R(x, bar.y, tw, bar.h, sel ? C.TabActive : b.hov ? C.TabHovered : C.Tab, L_FRAME, 0, TAB_ROUNDING, TOP_CORNERS);
+			R(x, bar.y, tw, bar.h, sel ? C.TabActive : b.hov ? C.TabHovered : C.Tab, L_FRAME, 0, ends ? TAB_ROUNDING : 0, ends);
 			T(x, bar.y, tw, bar.h, disp, sel ? C.TextOnActive : C.Text, ALIGN_CENTER, L_FRAME);
 		}
 		win.clipOn = clip;
@@ -1932,8 +1934,6 @@ Il2Cpp.perform(() => {
 				const dh = Math.max(bar.pageH, (bar.sideY! - bar.topY!));
 				R(dx, bar.topY!, 2, dh, C.TabActive, L_FRAME, 0, 1);
 				cur!.sideOff = 0;
-			} else {
-				R(style.pad, bar.y + bar.h - 1, fullW(), 2, C.TabActive, L_FRAME);
 			}
 		}
 		if (bar && bar.side && cur) cur.sideOff = 0;

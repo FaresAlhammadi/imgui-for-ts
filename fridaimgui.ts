@@ -27,8 +27,8 @@ const PAGE_HEIGHT    = 560;
 const ALWAYS_ON_TOP  = true;
 const STABILIZE      = true;
 const SCROLL_SPEED   = 900;
-const UI_IDLE_RATE   = 2;
-const UI_STILL_RATE  = 8;
+const UI_IDLE_RATE   = 3;
+const UI_STILL_RATE  = 12;
 const SHAPES         = "mesh";
 const SPAWN_DISTANCE = 0.45;
 const RAY_PITCH_DEG  = 0;
@@ -363,8 +363,13 @@ Il2Cpp.perform(() => {
 	function persist(go: any) { if (ddolM && go) { try { ddolM.invoke(go); } catch (e) { errOnce("DontDestroyOnLoad", e); } } }
 	function destroy(o: any) { try { if (o && !o.isNull()) UEObject.method("Destroy", 1).invoke(o); } catch {} }
 
+	// Struct arguments are consumed by the call they're passed to, so a small ring of reusable
+	// 16-byte buffers replaces a native allocation (plus its JS finalizer) per Vector3/Quaternion/Color.
+	const vtRing: any[] = [];
+	let vtNext = 0;
 	function vt(klass: any, floats: number[]): any {
-		const p = Memory.alloc(floats.length * 4);
+		const slot = vtNext++ & 31;
+		const p = vtRing[slot] ?? (vtRing[slot] = Memory.alloc(16));
 		for (let i = 0; i < floats.length; i++) p.add(i * 4).writeFloat(floats[i]);
 		return new Il2Cpp.ValueType(p, klass.type);
 	}
@@ -787,10 +792,12 @@ Il2Cpp.perform(() => {
 	}
 	const legacyGetAxis = LegacyInput ? LegacyInput.methods.find((m: any) => m.name === "GetAxis" && m.parameterCount === 1) ?? null : null;
 	let legacyAxisOK: boolean | null = legacyGetAxis ? null : false;
+	const axisNames = new Map<string, any>();
+	const axisName = (n: string) => axisNames.get(n) ?? (axisNames.set(n, keep(Il2Cpp.string(n))), axisNames.get(n));
 	function legacyStickY(): number {
 		if (!legacyGetAxis || legacyAxisOK === false) return 0;
 		for (const name of ["Vertical", "RVerticalAxis", "Oculus_CrossPlatform_SecondaryThumbstickVertical"]) {
-			try { const v = legacyGetAxis.invoke(Il2Cpp.string(name)) as number; legacyAxisOK = true; if (Math.abs(v) > 0.2) return v; }
+			try { const v = legacyGetAxis.invoke(axisName(name)) as number; legacyAxisOK = true; if (Math.abs(v) > 0.2) return v; }
 			catch { legacyAxisOK = false; return 0; }
 		}
 		return 0;
@@ -798,7 +805,7 @@ Il2Cpp.perform(() => {
 	function legacyTrigger(): number {
 		if (!legacyGetAxis || legacyAxisOK === false) return 0;
 		for (const name of ["Oculus_CrossPlatform_SecondaryIndexTrigger", "Oculus_CrossPlatform_PrimaryIndexTrigger", "RIndexTrigger", "Fire1", "Submit"]) {
-			try { const v = legacyGetAxis.invoke(Il2Cpp.string(name)) as number; if (Math.abs(v) > 0.01) return v; } catch { return 0; }
+			try { const v = legacyGetAxis.invoke(axisName(name)) as number; if (Math.abs(v) > 0.01) return v; } catch { return 0; }
 		}
 		return 0;
 	}
@@ -2070,6 +2077,29 @@ Il2Cpp.perform(() => {
 		hudContentAt = 0;
 	}
 
+	// Parent the HUD root to the head once; after that it costs nothing per frame. Falls back to
+	// following the head from JS if parenting fails. Re-parents when the head changes (new scene).
+	let hudHead: any = null, hudRoot: any = null, hudHeadFailed = false, hudScale = 0, hudHeadScale = 1;
+	function hudOnHead(head: any): boolean {
+		if (hudHeadFailed || !hudWin.rootT || !alive(hudWin.root)) return false;
+		try {
+			if (hudHead !== head || hudRoot !== hudWin.root) {
+				hudWin.rootT.method("SetParent", 2).invoke(head, false);
+				// scaled player rigs (common in gorilla-locomotion games) would scale the HUD too - undo that
+				const ls = get3(head, "get_lossyScale");
+				hudHeadScale = ls && ls[0] > 1e-4 ? ls[0] : 1;
+				call(hudWin.rootT, "set_localPosition", v3(HUD_OFFSET[0] / hudHeadScale, HUD_OFFSET[1] / hudHeadScale, HUD_OFFSET[2] / hudHeadScale));
+				call(hudWin.rootT, "set_localRotation", qt([0, 0, 0, 1]));
+				hudHead = head; hudRoot = hudWin.root; hudScale = 0;
+			}
+			if (hudScale !== style.scale) {
+				const k = style.scale / hudHeadScale;
+				call(hudWin.rootT, "set_localScale", v3(k, k, k));
+				hudScale = style.scale; hudWin.appliedScale = style.scale;
+			}
+			return true;
+		} catch (e) { hudHeadFailed = true; hudHead = null; log("HUD follows the head from script (" + e + ")"); return false; }
+	}
 	function updateHud(): boolean {
 		const now = Date.now();
 		while (notes.length && notes[0].until < now) notes.shift();
@@ -2078,6 +2108,10 @@ Il2Cpp.perform(() => {
 		if (!show) return content;
 		const t = headT();
 		if (!t) return content;
+		if (hudOnHead(t)) {
+			hudWin.placed = true; hudWin.visible = true; hudWin.poseDirty = false;
+			if (!content) return false;
+		} else {
 		const p = get3(t, "get_position"), f = get3(t, "get_forward"), u = get3(t, "get_up");
 		if (!p || !f || !u) return content;
 		const right = norm(cross(u, f));
@@ -2087,6 +2121,7 @@ Il2Cpp.perform(() => {
 		faceAt(hudWin, hudP, sub(hudP, hudF));
 		hudWin.P = hudP; hudWin.poseDirty = true; hudWin.placed = true; hudWin.visible = true;
 		if (!content) return false;
+		}
 		hudContentAt = now;
 
 		if (now - fpsAt > 500) { fpsAt = now; fpsShown = fps; }
@@ -3261,16 +3296,22 @@ Il2Cpp.perform(() => {
 		if (rightT) return "ray";
 		return "gaze";
 	}
+	// Until you've clicked once every input source is polled (about 20 game calls a frame with the
+	// menu open); after that only the source(s) that actually produced a click are.
+	const clickSrc = new Set<string>();
+	const clickFrom = (src: string) => { if (!clickSrc.has(src)) { clickSrc.add(src); log("click input: " + src); } return true; };
 	function anyClick(): boolean {
-		if (xrReady && (xrButton(5, usageTrigBtn) || xrButton(5, usagePrimBtn) || xrButton(4, usagePrimBtn))) return true;
-		if (ovr.axis && ovrRightTrigger() > TRIG_THRESH) return true;
-		if (hvr.inputs && hvrTrigger() > TRIG_THRESH) return true;
-		if (legacyGetAxis && legacyTrigger() > TRIG_THRESH) return true;
-		if (legacyOK !== false && legacyGetKey) {
-			if (legacyKey(KEY_A) || legacyKey(0) || legacyKey(14) || legacyKey(15) || legacyKey(4) || legacyKey(5)) return true;
+		const any = clickSrc.size === 0, use = (src: string) => any || clickSrc.has(src);
+		if (xrReady && use("xr") && (xrButton(5, usageTrigBtn) || xrButton(5, usagePrimBtn) || xrButton(4, usagePrimBtn))) return clickFrom("xr");
+		if (ovr.axis && use("ovr") && ovrRightTrigger() > TRIG_THRESH) return clickFrom("ovr");
+		if (hvr.inputs && use("hvr") && hvrTrigger() > TRIG_THRESH) return clickFrom("hvr");
+		if (legacyGetAxis && use("axis") && legacyTrigger() > TRIG_THRESH) return clickFrom("axis");
+		if (legacyOK !== false && legacyGetKey && use("keys")) {
+			if (legacyKey(KEY_A) || legacyKey(0) || legacyKey(14) || legacyKey(15) || legacyKey(4) || legacyKey(5)) return clickFrom("keys");
 		}
 		return false;
 	}
+	let stickSrc = "";
 	let dwell = { x: -1, y: -1, t: 0, fired: false };
 	function pokeRay(): { o: number[]; d: number[]; down: boolean } | null {
 		let tip = get3(rightT, "get_position");
@@ -3358,9 +3399,10 @@ Il2Cpp.perform(() => {
 		}
 		let scroll = 0;
 		if (menuOpen) {
-			let y = ovr.stick ? ovrRightStickY() : 0;
-			if (Math.abs(y) < 0.2 && hvr.inputs) y = hvrStickY();
-			if (Math.abs(y) < 0.2) y = legacyStickY();
+			let y = 0;
+			if (ovr.stick && (!stickSrc || stickSrc === "ovr")) { y = ovrRightStickY(); if (Math.abs(y) > 0.2) stickSrc = "ovr"; }
+			if (Math.abs(y) < 0.2 && hvr.inputs && (!stickSrc || stickSrc === "hvr")) { y = hvrStickY(); if (Math.abs(y) > 0.2) stickSrc = "hvr"; }
+			if (Math.abs(y) < 0.2 && (!stickSrc || stickSrc === "axis")) { y = legacyStickY(); if (Math.abs(y) > 0.2) stickSrc = "axis"; }
 			if (Math.abs(y) > 0.2) scroll = -y * SCROLL_SPEED * dt;
 		}
 

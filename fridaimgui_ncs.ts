@@ -36,8 +36,8 @@ const PAGE_HEIGHT    = 560;
 const ALWAYS_ON_TOP  = true;
 const STABILIZE      = true;
 const SCROLL_SPEED   = 900;
-const UI_IDLE_RATE   = 2;
-const UI_STILL_RATE  = 8;
+const UI_IDLE_RATE   = 3;
+const UI_STILL_RATE  = 12;
 const SHAPES         = "mesh";
 const SPAWN_DISTANCE = 0.45;
 const RAY_PITCH_DEG  = 0;
@@ -101,24 +101,26 @@ const S = {
 	showBones:     ref(false),
 	showColliders: ref(false),
 	logHooks:      ref(false),
-	freeze:        ref(false),
-	flyHand:       ref(0),
-	flyTrigger:    ref(true),
-	flyGrip:       ref(false),
-	flyPrimary:    ref(false),
-	flySecondary:  ref(false),
-	velHand:       ref(0),
-	velTrigger:    ref(false),
-	velGrip:       ref(false),
-	velPrimary:    ref(false),
-	itemSel:       ref(0),
 };
 const HANDS = ["Both", "Left", "Right"];
-const DEMO_SPAWN = ["item_ak_scale", "item_apple", "item_arena_pistol", "item_arena_shotgun", "item_arrow", "item_arrow_bomb",
-	"item_backpack", "item_banana", "item_baseball_bat", "item_boombox", "item_bow", "item_crossbow", "item_dynamite",
-	"item_flaregun", "item_grenade", "item_grenade_launcher", "item_hookshot", "item_jetpack", "item_katana", "item_lance",
-	"item_medkit", "item_pickaxe", "item_revolver", "item_rpg", "item_shotgun", "item_stick", "item_sword", "item_teleporter"];
 const MODES = ["Normal", "Fast", "Chaos"];
+
+// Placeholder tabs: every control works (toggles, sliders, lists, buttons) but nothing is wired to a script.
+const PH = {
+	toggles: [ref(false), ref(false), ref(false), ref(false), ref(false), ref(false)],
+	speed: ref(1.0), amount: ref(1), mode: ref(0), hand: ref(0), item: ref(0), group: ref(false),
+	scale: ref(1.0), count: ref(1),
+};
+const PH_ITEMS = Array.from({ length: 24 }, (_, i) => "Placeholder Item " + (i + 1 < 10 ? "0" : "") + (i + 1));
+const PH_WARNING = ["This tab is a placeholder.", "Nothing in it is connected to a script, so it won't do anything in NCS (Nightclub Simulator). The buttons, toggles and sliders still work - they just don't run any mods."];
+const phSeen = new Set<string>();
+const phClick = (ui: any, what: string) => ui.notify(what + " (placeholder - no script attached)");
+// Shows the warning until Continue is pressed (once per tab, per session). Returns true once past it.
+function placeholderGate(ui: any, tab: string): boolean {
+	if (phSeen.has(tab)) return true;
+	if (ui.notice("Placeholder", PH_WARNING, "Continue")) phSeen.add(tab);
+	return false;
+}
 const DEMO_ITEMS = ["mod.frb", "config.json", "preset_a.frb", "preset_b.frb"];
 
 function onUpdate(): void {
@@ -132,30 +134,23 @@ function drawMenu(ui: any): void {
 		if (ui.tabItem("NCS MODS")) ui.ncsMods();
 
 		if (ui.tabItem("Player")) {
-			if (ui.collapsingHeader("Movement", true)) {
-				ui.checkbox("Freeze in Place", S.freeze);
-				if (ui.treeNode("Hand Fly", true)) {
-					ui.combo("Target Hand", S.flyHand, HANDS);
-					ui.checkbox("Trigger", S.flyTrigger);
-					ui.checkbox("Grip", S.flyGrip);
-					ui.checkbox("Primary", S.flyPrimary);
-					ui.checkbox("Secondary", S.flySecondary);
-					ui.sliderFloat("Fly Speed", S.speed, 1, 10, 2);
-					ui.treePop();
+			if (placeholderGate(ui, "Player")) {
+				if (ui.collapsingHeader("Movement", true)) {
+					ui.checkbox("Placeholder Toggle 1", PH.toggles[0]);
+					ui.checkbox("Placeholder Toggle 2", PH.toggles[1]);
+					ui.sliderFloat("Placeholder Speed", PH.speed, 1, 10, 2);
+					if (ui.treeNode("Placeholder Group", true)) {
+						ui.combo("Placeholder Hand", PH.hand, HANDS);
+						ui.checkbox("Placeholder Toggle 3", PH.toggles[2]);
+						ui.checkbox("Placeholder Toggle 4", PH.toggles[3]);
+						ui.treePop();
+					}
 				}
-				if (ui.treeNode("Velocity Fly")) {
-					ui.combo("Target Hand##vel", S.velHand, HANDS);
-					ui.checkbox("Trigger##vel", S.velTrigger);
-					ui.checkbox("Grip##vel", S.velGrip);
-					ui.checkbox("Primary##vel", S.velPrimary);
-					ui.treePop();
+				if (ui.collapsingHeader("Actions", true)) {
+					if (ui.button("Placeholder Button 1")) phClick(ui, "Placeholder Button 1");
+					ui.sameLine();
+					if (ui.button("Placeholder Button 2")) phClick(ui, "Placeholder Button 2");
 				}
-				ui.checkbox("Noclip", S.noclip);
-				ui.checkbox("Speed Boost", S.speedBoost);
-			}
-			if (ui.collapsingHeader("Stats", false)) {
-				ui.progressBar(S.speed.v / 10, "speed " + S.speed.v.toFixed(1));
-				ui.text("These are demo controls - wire them to your game.");
 			}
 		}
 
@@ -173,43 +168,31 @@ function drawMenu(ui: any): void {
 		}
 
 		if (ui.tabItem("Items")) {
-			if (ui.collapsingHeader("Items", true)) {
-				if (ui.listBox("##spawnlist", S.itemSel, DEMO_SPAWN, 8)) ui.notify("selected " + DEMO_SPAWN[S.itemSel.v]);
-				ui.text("Selected: " + DEMO_SPAWN[S.itemSel.v]);
+			if (placeholderGate(ui, "Items")) {
+				if (ui.collapsingHeader("Items", true)) {
+					ui.listBox("##phitems", PH.item, PH_ITEMS, 8);
+					ui.text("Selected: " + PH_ITEMS[PH.item.v]);
+				}
+				if (ui.collapsingHeader("Options", true)) {
+					ui.sliderFloat("Placeholder Scale", PH.scale, 0.1, 5, 2);
+					ui.sameLine();
+					if (ui.button("Reset##phscale")) PH.scale.v = 1.0;
+					ui.checkbox("Placeholder Toggle 5", PH.toggles[4]);
+					if (ui.button("Use Selected Item")) phClick(ui, PH_ITEMS[PH.item.v]);
+				}
 			}
-			if (ui.collapsingHeader("Spawn Config", true)) {
-				ui.checkbox("Random Scale", S.randomScale);
-				ui.sliderFloat("Scale Modifier", S.scaleMod, 0.1, 5, 2);
-				ui.sameLine();
-				if (ui.button("Reset##scale")) S.scaleMod.v = 1.0;
-				ui.checkbox("Random Sat", S.randomSat);
-				ui.sliderFloat("Saturation Modifier", S.satMod, 0, 2, 2);
-				ui.sameLine();
-				if (ui.button("Reset##sat")) S.satMod.v = 1.0;
-				ui.checkbox("Random Hue", S.randomHue);
-				ui.sliderFloat("Hue Modifier", S.hueMod, 0, 360, 0);
-				ui.sameLine();
-				if (ui.button("Reset##hue")) S.hueMod.v = 0;
-			}
-			ui.checkbox("Hand Duper", S.handDuper);
-			ui.separator();
-			if (ui.button("Spawn Left Hand")) ui.notify("demo: spawn left hand");
-			ui.sameLine();
-			if (ui.button("Spawn Right Hand")) ui.notify("demo: spawn right hand");
-			if (ui.button("Spawn Head")) ui.notify("demo: spawn head");
-			ui.sameLine();
-			if (ui.button("Item Launcher")) ui.notify("demo: launcher");
 		}
 
 		if (ui.tabItem("Spawning")) {
-			ui.text("Config file: " + ui.filePath());
-			if (ui.button("Browse##items")) { S.itemPath.v = (S.itemPath.v + 1) % DEMO_ITEMS.length; ui.notify("selected " + DEMO_ITEMS[S.itemPath.v]); }
-			if (ui.collapsingHeader("Weapons", true)) {
-				ui.checkbox("Infinite Ammo", S.infAmmo);
-				ui.checkbox("Infinite RPG", S.infRpg);
-				ui.checkbox("Infinite Flaregun", S.infFlare);
-				ui.checkbox("Infinite Revolver", S.infRevolver);
-				ui.checkbox("Always Cocked (revy)", S.alwaysCocked);
+			if (placeholderGate(ui, "Spawning")) {
+				if (ui.collapsingHeader("Spawner", true)) {
+					ui.combo("Placeholder Mode", PH.mode, MODES);
+					ui.sliderInt("Placeholder Amount", PH.count, 1, 20);
+					ui.checkbox("Placeholder Toggle 6", PH.toggles[5]);
+					if (ui.button("Spawn Placeholder")) phClick(ui, "Spawn x" + PH.count.v);
+					ui.sameLine();
+					if (ui.button("Clear Placeholders")) phClick(ui, "Clear");
+				}
 			}
 		}
 
@@ -393,8 +376,13 @@ Il2Cpp.perform(() => {
 	function persist(go: any) { if (ddolM && go) { try { ddolM.invoke(go); } catch (e) { errOnce("DontDestroyOnLoad", e); } } }
 	function destroy(o: any) { try { if (o && !o.isNull()) UEObject.method("Destroy", 1).invoke(o); } catch {} }
 
+	// Struct arguments are consumed by the call they're passed to, so a small ring of reusable
+	// 16-byte buffers replaces a native allocation (plus its JS finalizer) per Vector3/Quaternion/Color.
+	const vtRing: any[] = [];
+	let vtNext = 0;
 	function vt(klass: any, floats: number[]): any {
-		const p = Memory.alloc(floats.length * 4);
+		const slot = vtNext++ & 31;
+		const p = vtRing[slot] ?? (vtRing[slot] = Memory.alloc(16));
 		for (let i = 0; i < floats.length; i++) p.add(i * 4).writeFloat(floats[i]);
 		return new Il2Cpp.ValueType(p, klass.type);
 	}
@@ -817,10 +805,12 @@ Il2Cpp.perform(() => {
 	}
 	const legacyGetAxis = LegacyInput ? LegacyInput.methods.find((m: any) => m.name === "GetAxis" && m.parameterCount === 1) ?? null : null;
 	let legacyAxisOK: boolean | null = legacyGetAxis ? null : false;
+	const axisNames = new Map<string, any>();
+	const axisName = (n: string) => axisNames.get(n) ?? (axisNames.set(n, keep(Il2Cpp.string(n))), axisNames.get(n));
 	function legacyStickY(): number {
 		if (!legacyGetAxis || legacyAxisOK === false) return 0;
 		for (const name of ["Vertical", "RVerticalAxis", "Oculus_CrossPlatform_SecondaryThumbstickVertical"]) {
-			try { const v = legacyGetAxis.invoke(Il2Cpp.string(name)) as number; legacyAxisOK = true; if (Math.abs(v) > 0.2) return v; }
+			try { const v = legacyGetAxis.invoke(axisName(name)) as number; legacyAxisOK = true; if (Math.abs(v) > 0.2) return v; }
 			catch { legacyAxisOK = false; return 0; }
 		}
 		return 0;
@@ -828,7 +818,7 @@ Il2Cpp.perform(() => {
 	function legacyTrigger(): number {
 		if (!legacyGetAxis || legacyAxisOK === false) return 0;
 		for (const name of ["Oculus_CrossPlatform_SecondaryIndexTrigger", "Oculus_CrossPlatform_PrimaryIndexTrigger", "RIndexTrigger", "Fire1", "Submit"]) {
-			try { const v = legacyGetAxis.invoke(Il2Cpp.string(name)) as number; if (Math.abs(v) > 0.01) return v; } catch { return 0; }
+			try { const v = legacyGetAxis.invoke(axisName(name)) as number; if (Math.abs(v) > 0.01) return v; } catch { return 0; }
 		}
 		return 0;
 	}
@@ -873,6 +863,7 @@ Il2Cpp.perform(() => {
 			Grip: [0.56, 0.50, 0.72, 0.35], GripHovered: [0.62, 0.57, 0.80, 0.7], GripActive: [0.72, 0.66, 0.90, 0.95],
 			ModalDim: [0.02, 0.01, 0.04, 0.6], Discord: [0.35, 0.4, 0.95, 0.9], DiscordHovered: [0.45, 0.5, 1, 1],
 			ListRow: [0.36, 0.31, 0.48, 0.42], ListRowAlt: [0.44, 0.39, 0.58, 0.42],
+			NoticeTitle: [1, 0.80, 0.40, 1], NoticeBorder: [1, 0.78, 0.40, 0.75],
 		},
 		Purple: {
 			Text: [0.86, 0.83, 0.95, 1], TextDisabled: [0.62, 0.58, 0.75, 0.85], TextOnActive: [1, 1, 1, 1],
@@ -1770,6 +1761,44 @@ Il2Cpp.perform(() => {
 		return focused;
 	}
 
+	function wrapText(str: string, width: number): string[] {
+		const out: string[] = [];
+		for (const para of str.split("\n")) {
+			let line = "";
+			for (const word of para.split(" ")) {
+				const next = line ? line + " " + word : word;
+				if (line && textW(next) > width) { out.push(line); line = word; } else line = next;
+			}
+			out.push(line);
+		}
+		return out;
+	}
+	// framed message box: title, word-wrapped lines, one button; returns true when the button is clicked
+	function notice(title: string, lines: string[], buttonLabel: string = "OK"): boolean {
+		const [, id] = labelId(title + "##notice");
+		const fw = fullW(), pad = 16, lh = lineH();
+		const body: string[] = [];
+		for (const l of lines) body.push(...wrapText(l, fw - pad * 2), "");
+		body.pop();
+		const bw = textW(buttonLabel) + style.framePadX * 2;
+		const h = pad + lh + 8 + body.length * lh + 14 + style.frameH + pad;
+		const [x, y] = item(fw, h);
+		const rad = style.rounding * 1.6;
+		RR(x, y, fw, h, C.PopupBg, L_ROW, 1.6);
+		R(x, y, fw, h, C.NoticeBorder ?? C.Accent, L_FRAME, 0, Math.max(rad, 10), ALL_CORNERS, TEX_RING);
+		let ty = y + pad;
+		const as = arrowSize();
+		arrow(x + pad, ty + (lh - as) / 2, as, 1, C.NoticeTitle ?? C.Accent);
+		T(x + pad + as + 8, ty, fw - pad * 2, lh, title, C.NoticeTitle ?? C.Accent, ALIGN_LEFT, L_FRAME);
+		ty += lh + 8;
+		for (const l of body) { if (l) T(x + pad, ty, fw - pad * 2, lh, l, C.Text, ALIGN_LEFT, L_FRAME); ty += lh; }
+		ty += 14;
+		const b = behavior(id, x + pad, ty, bw, style.frameH);
+		RR(x + pad, ty, bw, style.frameH, b.held ? C.ButtonActive : b.hov ? C.ButtonHovered : C.Button, L_FRAME);
+		T(x + pad, ty, bw, style.frameH, buttonLabel, C.Text, ALIGN_CENTER, L_FRAME);
+		return b.clicked;
+	}
+
 	// list box with a search field on top and a letter column on the left (click a letter to jump)
 	function listBox(label: string, r: { v: number }, items: string[], rows: number = 8): boolean {
 		const [disp, id] = labelId(label);
@@ -2061,6 +2090,29 @@ Il2Cpp.perform(() => {
 		hudContentAt = 0;
 	}
 
+	// Parent the HUD root to the head once; after that it costs nothing per frame. Falls back to
+	// following the head from JS if parenting fails. Re-parents when the head changes (new scene).
+	let hudHead: any = null, hudRoot: any = null, hudHeadFailed = false, hudScale = 0, hudHeadScale = 1;
+	function hudOnHead(head: any): boolean {
+		if (hudHeadFailed || !hudWin.rootT || !alive(hudWin.root)) return false;
+		try {
+			if (hudHead !== head || hudRoot !== hudWin.root) {
+				hudWin.rootT.method("SetParent", 2).invoke(head, false);
+				// scaled player rigs (common in gorilla-locomotion games) would scale the HUD too - undo that
+				const ls = get3(head, "get_lossyScale");
+				hudHeadScale = ls && ls[0] > 1e-4 ? ls[0] : 1;
+				call(hudWin.rootT, "set_localPosition", v3(HUD_OFFSET[0] / hudHeadScale, HUD_OFFSET[1] / hudHeadScale, HUD_OFFSET[2] / hudHeadScale));
+				call(hudWin.rootT, "set_localRotation", qt([0, 0, 0, 1]));
+				hudHead = head; hudRoot = hudWin.root; hudScale = 0;
+			}
+			if (hudScale !== style.scale) {
+				const k = style.scale / hudHeadScale;
+				call(hudWin.rootT, "set_localScale", v3(k, k, k));
+				hudScale = style.scale; hudWin.appliedScale = style.scale;
+			}
+			return true;
+		} catch (e) { hudHeadFailed = true; hudHead = null; log("HUD follows the head from script (" + e + ")"); return false; }
+	}
 	function updateHud(): boolean {
 		const now = Date.now();
 		while (notes.length && notes[0].until < now) notes.shift();
@@ -2069,6 +2121,10 @@ Il2Cpp.perform(() => {
 		if (!show) return content;
 		const t = headT();
 		if (!t) return content;
+		if (hudOnHead(t)) {
+			hudWin.placed = true; hudWin.visible = true; hudWin.poseDirty = false;
+			if (!content) return false;
+		} else {
 		const p = get3(t, "get_position"), f = get3(t, "get_forward"), u = get3(t, "get_up");
 		if (!p || !f || !u) return content;
 		const right = norm(cross(u, f));
@@ -2078,6 +2134,7 @@ Il2Cpp.perform(() => {
 		faceAt(hudWin, hudP, sub(hudP, hudF));
 		hudWin.P = hudP; hudWin.poseDirty = true; hudWin.placed = true; hudWin.visible = true;
 		if (!content) return false;
+		}
 		hudContentAt = now;
 
 		if (now - fpsAt > 500) { fpsAt = now; fpsShown = fps; }
@@ -3351,7 +3408,7 @@ Il2Cpp.perform(() => {
 	const ui = {
 		begin, end, text, textColored: (c: number[], s: string) => text(s, c), textDisabled: (s: string) => text(s, C.TextDisabled),
 		button, checkbox, sliderFloat, sliderInt, combo, collapsingHeader, separator, spacing, sameLine, indent, unindent,
-		progressBar, beginTabBar, tabItem, endTabBar, ncsMods, treeNode, treePop, inputText, listBox, settings, info, notify, confirm, openUrl, style, ref,
+		progressBar, beginTabBar, tabItem, endTabBar, notice, ncsMods, treeNode, treePop, inputText, listBox, settings, info, notify, confirm, openUrl, style, ref,
 		pluginsTab, plugins: () => filePlugins(), pluginPage, debugTab, filePath, pluginDir: pluginDirStr,
 		theme: (name: string) => applyTheme(name), themes: () => THEME_NAMES.slice(),
 		fonts: () => loadedFonts.map(f => f.name),
@@ -3392,16 +3449,22 @@ Il2Cpp.perform(() => {
 		if (rightT) return "ray";
 		return "gaze";
 	}
+	// Until you've clicked once every input source is polled (about 20 game calls a frame with the
+	// menu open); after that only the source(s) that actually produced a click are.
+	const clickSrc = new Set<string>();
+	const clickFrom = (src: string) => { if (!clickSrc.has(src)) { clickSrc.add(src); log("click input: " + src); } return true; };
 	function anyClick(): boolean {
-		if (xrReady && (xrButton(5, usageTrigBtn) || xrButton(5, usagePrimBtn) || xrButton(4, usagePrimBtn))) return true;
-		if (ovr.axis && ovrRightTrigger() > TRIG_THRESH) return true;
-		if (hvr.inputs && hvrTrigger() > TRIG_THRESH) return true;
-		if (legacyGetAxis && legacyTrigger() > TRIG_THRESH) return true;
-		if (legacyOK !== false && legacyGetKey) {
-			if (legacyKey(KEY_A) || legacyKey(0) || legacyKey(14) || legacyKey(15) || legacyKey(4) || legacyKey(5)) return true;
+		const any = clickSrc.size === 0, use = (src: string) => any || clickSrc.has(src);
+		if (xrReady && use("xr") && (xrButton(5, usageTrigBtn) || xrButton(5, usagePrimBtn) || xrButton(4, usagePrimBtn))) return clickFrom("xr");
+		if (ovr.axis && use("ovr") && ovrRightTrigger() > TRIG_THRESH) return clickFrom("ovr");
+		if (hvr.inputs && use("hvr") && hvrTrigger() > TRIG_THRESH) return clickFrom("hvr");
+		if (legacyGetAxis && use("axis") && legacyTrigger() > TRIG_THRESH) return clickFrom("axis");
+		if (legacyOK !== false && legacyGetKey && use("keys")) {
+			if (legacyKey(KEY_A) || legacyKey(0) || legacyKey(14) || legacyKey(15) || legacyKey(4) || legacyKey(5)) return clickFrom("keys");
 		}
 		return false;
 	}
+	let stickSrc = "";
 	let dwell = { x: -1, y: -1, t: 0, fired: false };
 	function pokeRay(): { o: number[]; d: number[]; down: boolean } | null {
 		let tip = get3(rightT, "get_position");
@@ -3490,9 +3553,10 @@ Il2Cpp.perform(() => {
 		}
 		let scroll = 0;
 		if (menuOpen) {
-			let y = ovr.stick ? ovrRightStickY() : 0;
-			if (Math.abs(y) < 0.2 && hvr.inputs) y = hvrStickY();
-			if (Math.abs(y) < 0.2) y = legacyStickY();
+			let y = 0;
+			if (ovr.stick && (!stickSrc || stickSrc === "ovr")) { y = ovrRightStickY(); if (Math.abs(y) > 0.2) stickSrc = "ovr"; }
+			if (Math.abs(y) < 0.2 && hvr.inputs && (!stickSrc || stickSrc === "hvr")) { y = hvrStickY(); if (Math.abs(y) > 0.2) stickSrc = "hvr"; }
+			if (Math.abs(y) < 0.2 && (!stickSrc || stickSrc === "axis")) { y = legacyStickY(); if (Math.abs(y) > 0.2) stickSrc = "axis"; }
 			if (Math.abs(y) > 0.2) scroll = -y * SCROLL_SPEED * dt;
 		}
 

@@ -89,24 +89,26 @@ const S = {
 	showBones:     ref(false),
 	showColliders: ref(false),
 	logHooks:      ref(false),
-	freeze:        ref(false),
-	flyHand:       ref(0),
-	flyTrigger:    ref(true),
-	flyGrip:       ref(false),
-	flyPrimary:    ref(false),
-	flySecondary:  ref(false),
-	velHand:       ref(0),
-	velTrigger:    ref(false),
-	velGrip:       ref(false),
-	velPrimary:    ref(false),
-	itemSel:       ref(0),
 };
 const HANDS = ["Both", "Left", "Right"];
-const DEMO_SPAWN = ["item_ak_scale", "item_apple", "item_arena_pistol", "item_arena_shotgun", "item_arrow", "item_arrow_bomb",
-	"item_backpack", "item_banana", "item_baseball_bat", "item_boombox", "item_bow", "item_crossbow", "item_dynamite",
-	"item_flaregun", "item_grenade", "item_grenade_launcher", "item_hookshot", "item_jetpack", "item_katana", "item_lance",
-	"item_medkit", "item_pickaxe", "item_revolver", "item_rpg", "item_shotgun", "item_stick", "item_sword", "item_teleporter"];
 const MODES = ["Normal", "Fast", "Chaos"];
+
+// Placeholder tabs: every control works (toggles, sliders, lists, buttons) but nothing is wired to a script.
+const PH = {
+	toggles: [ref(false), ref(false), ref(false), ref(false), ref(false), ref(false)],
+	speed: ref(1.0), amount: ref(1), mode: ref(0), hand: ref(0), item: ref(0), group: ref(false),
+	scale: ref(1.0), count: ref(1),
+};
+const PH_ITEMS = Array.from({ length: 24 }, (_, i) => "Placeholder Item " + (i + 1 < 10 ? "0" : "") + (i + 1));
+const PH_WARNING = ["This tab is a placeholder.", "Nothing in it is connected to a script, so it won't do anything in AC (Animal Company). The buttons, toggles and sliders still work - they just don't run any mods."];
+const phSeen = new Set<string>();
+const phClick = (ui: any, what: string) => ui.notify(what + " (placeholder - no script attached)");
+// Shows the warning until Continue is pressed (once per tab, per session). Returns true once past it.
+function placeholderGate(ui: any, tab: string): boolean {
+	if (phSeen.has(tab)) return true;
+	if (ui.notice("Placeholder", PH_WARNING, "Continue")) phSeen.add(tab);
+	return false;
+}
 const DEMO_ITEMS = ["mod.frb", "config.json", "preset_a.frb", "preset_b.frb"];
 
 function onUpdate(): void {
@@ -119,30 +121,23 @@ function drawMenu(ui: any): void {
 		ui.beginTabBar("tabs");
 
 		if (ui.tabItem("Player")) {
-			if (ui.collapsingHeader("Movement", true)) {
-				ui.checkbox("Freeze in Place", S.freeze);
-				if (ui.treeNode("Hand Fly", true)) {
-					ui.combo("Target Hand", S.flyHand, HANDS);
-					ui.checkbox("Trigger", S.flyTrigger);
-					ui.checkbox("Grip", S.flyGrip);
-					ui.checkbox("Primary", S.flyPrimary);
-					ui.checkbox("Secondary", S.flySecondary);
-					ui.sliderFloat("Fly Speed", S.speed, 1, 10, 2);
-					ui.treePop();
+			if (placeholderGate(ui, "Player")) {
+				if (ui.collapsingHeader("Movement", true)) {
+					ui.checkbox("Placeholder Toggle 1", PH.toggles[0]);
+					ui.checkbox("Placeholder Toggle 2", PH.toggles[1]);
+					ui.sliderFloat("Placeholder Speed", PH.speed, 1, 10, 2);
+					if (ui.treeNode("Placeholder Group", true)) {
+						ui.combo("Placeholder Hand", PH.hand, HANDS);
+						ui.checkbox("Placeholder Toggle 3", PH.toggles[2]);
+						ui.checkbox("Placeholder Toggle 4", PH.toggles[3]);
+						ui.treePop();
+					}
 				}
-				if (ui.treeNode("Velocity Fly")) {
-					ui.combo("Target Hand##vel", S.velHand, HANDS);
-					ui.checkbox("Trigger##vel", S.velTrigger);
-					ui.checkbox("Grip##vel", S.velGrip);
-					ui.checkbox("Primary##vel", S.velPrimary);
-					ui.treePop();
+				if (ui.collapsingHeader("Actions", true)) {
+					if (ui.button("Placeholder Button 1")) phClick(ui, "Placeholder Button 1");
+					ui.sameLine();
+					if (ui.button("Placeholder Button 2")) phClick(ui, "Placeholder Button 2");
 				}
-				ui.checkbox("Noclip", S.noclip);
-				ui.checkbox("Speed Boost", S.speedBoost);
-			}
-			if (ui.collapsingHeader("Stats", false)) {
-				ui.progressBar(S.speed.v / 10, "speed " + S.speed.v.toFixed(1));
-				ui.text("These are demo controls - wire them to your game.");
 			}
 		}
 
@@ -160,43 +155,31 @@ function drawMenu(ui: any): void {
 		}
 
 		if (ui.tabItem("Items")) {
-			if (ui.collapsingHeader("Items", true)) {
-				if (ui.listBox("##spawnlist", S.itemSel, DEMO_SPAWN, 8)) ui.notify("selected " + DEMO_SPAWN[S.itemSel.v]);
-				ui.text("Selected: " + DEMO_SPAWN[S.itemSel.v]);
+			if (placeholderGate(ui, "Items")) {
+				if (ui.collapsingHeader("Items", true)) {
+					ui.listBox("##phitems", PH.item, PH_ITEMS, 8);
+					ui.text("Selected: " + PH_ITEMS[PH.item.v]);
+				}
+				if (ui.collapsingHeader("Options", true)) {
+					ui.sliderFloat("Placeholder Scale", PH.scale, 0.1, 5, 2);
+					ui.sameLine();
+					if (ui.button("Reset##phscale")) PH.scale.v = 1.0;
+					ui.checkbox("Placeholder Toggle 5", PH.toggles[4]);
+					if (ui.button("Use Selected Item")) phClick(ui, PH_ITEMS[PH.item.v]);
+				}
 			}
-			if (ui.collapsingHeader("Spawn Config", true)) {
-				ui.checkbox("Random Scale", S.randomScale);
-				ui.sliderFloat("Scale Modifier", S.scaleMod, 0.1, 5, 2);
-				ui.sameLine();
-				if (ui.button("Reset##scale")) S.scaleMod.v = 1.0;
-				ui.checkbox("Random Sat", S.randomSat);
-				ui.sliderFloat("Saturation Modifier", S.satMod, 0, 2, 2);
-				ui.sameLine();
-				if (ui.button("Reset##sat")) S.satMod.v = 1.0;
-				ui.checkbox("Random Hue", S.randomHue);
-				ui.sliderFloat("Hue Modifier", S.hueMod, 0, 360, 0);
-				ui.sameLine();
-				if (ui.button("Reset##hue")) S.hueMod.v = 0;
-			}
-			ui.checkbox("Hand Duper", S.handDuper);
-			ui.separator();
-			if (ui.button("Spawn Left Hand")) ui.notify("demo: spawn left hand");
-			ui.sameLine();
-			if (ui.button("Spawn Right Hand")) ui.notify("demo: spawn right hand");
-			if (ui.button("Spawn Head")) ui.notify("demo: spawn head");
-			ui.sameLine();
-			if (ui.button("Item Launcher")) ui.notify("demo: launcher");
 		}
 
 		if (ui.tabItem("Spawning")) {
-			ui.text("Config file: " + ui.filePath());
-			if (ui.button("Browse##items")) { S.itemPath.v = (S.itemPath.v + 1) % DEMO_ITEMS.length; ui.notify("selected " + DEMO_ITEMS[S.itemPath.v]); }
-			if (ui.collapsingHeader("Weapons", true)) {
-				ui.checkbox("Infinite Ammo", S.infAmmo);
-				ui.checkbox("Infinite RPG", S.infRpg);
-				ui.checkbox("Infinite Flaregun", S.infFlare);
-				ui.checkbox("Infinite Revolver", S.infRevolver);
-				ui.checkbox("Always Cocked (revy)", S.alwaysCocked);
+			if (placeholderGate(ui, "Spawning")) {
+				if (ui.collapsingHeader("Spawner", true)) {
+					ui.combo("Placeholder Mode", PH.mode, MODES);
+					ui.sliderInt("Placeholder Amount", PH.count, 1, 20);
+					ui.checkbox("Placeholder Toggle 6", PH.toggles[5]);
+					if (ui.button("Spawn Placeholder")) phClick(ui, "Spawn x" + PH.count.v);
+					ui.sameLine();
+					if (ui.button("Clear Placeholders")) phClick(ui, "Clear");
+				}
 			}
 		}
 
@@ -860,6 +843,7 @@ Il2Cpp.perform(() => {
 			Grip: [0.56, 0.50, 0.72, 0.35], GripHovered: [0.62, 0.57, 0.80, 0.7], GripActive: [0.72, 0.66, 0.90, 0.95],
 			ModalDim: [0.02, 0.01, 0.04, 0.6], Discord: [0.35, 0.4, 0.95, 0.9], DiscordHovered: [0.45, 0.5, 1, 1],
 			ListRow: [0.36, 0.31, 0.48, 0.42], ListRowAlt: [0.44, 0.39, 0.58, 0.42],
+			NoticeTitle: [1, 0.80, 0.40, 1], NoticeBorder: [1, 0.78, 0.40, 0.75],
 		},
 		Purple: {
 			Text: [0.86, 0.83, 0.95, 1], TextDisabled: [0.62, 0.58, 0.75, 0.85], TextOnActive: [1, 1, 1, 1],
@@ -1755,6 +1739,44 @@ Il2Cpp.perform(() => {
 		const shown = r.v.length || focused ? fitTail(r.v + (focused ? "_" : ""), fw - 20) : hint;
 		T(fx + 10, fy, fw - 20, fh, shown, r.v.length || focused ? C.Text : C.TextDisabled, ALIGN_LEFT, L_FRAME);
 		return focused;
+	}
+
+	function wrapText(str: string, width: number): string[] {
+		const out: string[] = [];
+		for (const para of str.split("\n")) {
+			let line = "";
+			for (const word of para.split(" ")) {
+				const next = line ? line + " " + word : word;
+				if (line && textW(next) > width) { out.push(line); line = word; } else line = next;
+			}
+			out.push(line);
+		}
+		return out;
+	}
+	// framed message box: title, word-wrapped lines, one button; returns true when the button is clicked
+	function notice(title: string, lines: string[], buttonLabel: string = "OK"): boolean {
+		const [, id] = labelId(title + "##notice");
+		const fw = fullW(), pad = 16, lh = lineH();
+		const body: string[] = [];
+		for (const l of lines) body.push(...wrapText(l, fw - pad * 2), "");
+		body.pop();
+		const bw = textW(buttonLabel) + style.framePadX * 2;
+		const h = pad + lh + 8 + body.length * lh + 14 + style.frameH + pad;
+		const [x, y] = item(fw, h);
+		const rad = style.rounding * 1.6;
+		RR(x, y, fw, h, C.PopupBg, L_ROW, 1.6);
+		R(x, y, fw, h, C.NoticeBorder ?? C.Accent, L_FRAME, 0, Math.max(rad, 10), ALL_CORNERS, TEX_RING);
+		let ty = y + pad;
+		const as = arrowSize();
+		arrow(x + pad, ty + (lh - as) / 2, as, 1, C.NoticeTitle ?? C.Accent);
+		T(x + pad + as + 8, ty, fw - pad * 2, lh, title, C.NoticeTitle ?? C.Accent, ALIGN_LEFT, L_FRAME);
+		ty += lh + 8;
+		for (const l of body) { if (l) T(x + pad, ty, fw - pad * 2, lh, l, C.Text, ALIGN_LEFT, L_FRAME); ty += lh; }
+		ty += 14;
+		const b = behavior(id, x + pad, ty, bw, style.frameH);
+		RR(x + pad, ty, bw, style.frameH, b.held ? C.ButtonActive : b.hov ? C.ButtonHovered : C.Button, L_FRAME);
+		T(x + pad, ty, bw, style.frameH, buttonLabel, C.Text, ALIGN_CENTER, L_FRAME);
+		return b.clicked;
 	}
 
 	// list box with a search field on top and a letter column on the left (click a letter to jump)
@@ -3198,7 +3220,7 @@ Il2Cpp.perform(() => {
 	const ui = {
 		begin, end, text, textColored: (c: number[], s: string) => text(s, c), textDisabled: (s: string) => text(s, C.TextDisabled),
 		button, checkbox, sliderFloat, sliderInt, combo, collapsingHeader, separator, spacing, sameLine, indent, unindent,
-		progressBar, beginTabBar, tabItem, endTabBar, treeNode, treePop, inputText, listBox, settings, info, notify, confirm, openUrl, style, ref,
+		progressBar, beginTabBar, tabItem, endTabBar, notice, treeNode, treePop, inputText, listBox, settings, info, notify, confirm, openUrl, style, ref,
 		pluginsTab, plugins: () => filePlugins(), pluginPage, debugTab, filePath, pluginDir: pluginDirStr,
 		theme: (name: string) => applyTheme(name), themes: () => THEME_NAMES.slice(),
 		fonts: () => loadedFonts.map(f => f.name),

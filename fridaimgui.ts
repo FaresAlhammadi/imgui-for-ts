@@ -773,21 +773,27 @@ Il2Cpp.perform(() => {
 			if (xrReady) log("XR input: InputDevices ready (new Input System)");
 		}
 	} catch (e) { xrReady = false; }
-	function xrDevice(node: number): any {
+	const xrDevs: { [node: number]: { dev: any; m: any; at: number } } = {};
+	const xrOut = Memory.alloc(8);
+	function xrDevice(node: number): { dev: any; m: any; at: number } | null {
 		if (!xrReady) return null;
-		try { const d = xrGetDevice.invoke(node); return d; } catch { return null; }
+		const now = Date.now(), c = xrDevs[node];
+		if (c && now - c.at < 1000) return c;
+		try {
+			const dev = xrGetDevice.invoke(node);
+			const m = dev && dev.method ? dev.method("TryGetFeatureValue", 2) : null;
+			return xrDevs[node] = { dev, m, at: now };
+		} catch { delete xrDevs[node]; return null; }
 	}
 	function xrButton(node: number, usage: any): boolean {
 		if (!xrReady || !usage) return false;
+		const c = xrDevice(node);
+		if (!c || !c.m) return false;
 		try {
-			const dev = xrDevice(node);
-			if (!dev) return false;
-			const m = dev.method ? dev.method("TryGetFeatureValue", 2) : null;
-			if (!m) return false;
-			const out = Memory.alloc(4);
-			const ok = m.invoke(usage, out);
-			return !!ok && out.readU8() !== 0;
-		} catch { return false; }
+			xrOut.writeU8(0);
+			const ok = c.m.invoke(usage, xrOut);
+			return !!ok && xrOut.readU8() !== 0;
+		} catch { delete xrDevs[node]; return false; }
 	}
 	function legacyKey(code: number): boolean {
 		if (!legacyGetKey || legacyOK === false) return false;
@@ -923,22 +929,29 @@ Il2Cpp.perform(() => {
 	const ALL_CORNERS = 15, TOP_CORNERS = 3, BOTTOM_CORNERS = 12;
 	const winRadius = () => style.rounding * 2;
 
-	// two-arm archimedean spiral: thin anti-aliased lines with a faint glow, dimmer toward the edges
+	// two-arm archimedean spiral: thin anti-aliased lines with a faint glow, dimmer toward the edges.
+	// Built a few rows per frame (patternStep) so loading never stalls the game. With two arms the
+	// pattern is symmetric under a half turn, so each computed row also fills its mirror row.
 	const PAT_N = 768, PAT_ARMS = 2, PAT_LINES = 34;
-	const patternBytes = new Uint8Array(PAT_N * PAT_N * 4);
-	if (WINDOW_PATTERN) {
-		const TAU = Math.PI * 2, spacing = PAT_N / PAT_LINES;
-		for (let j = 0; j < PAT_N; j++) for (let i = 0; i < PAT_N; i++) {
-			const dx = i / (PAT_N - 1) - 0.5, dy = j / (PAT_N - 1) - 0.5;
-			const r = Math.sqrt(dx * dx + dy * dy);
-			const ph = r * PAT_LINES + PAT_ARMS * Math.atan2(dy, dx) / TAU;
-			const d = Math.abs(ph - Math.round(ph)) * spacing;
-			const core = Math.min(1, Math.max(0, 1.25 - d)), glow = 0.16 * Math.exp(-(d * d) / 6);
-			const a = Math.min(1, core + glow) * (0.45 + 0.55 * Math.max(0, 1 - r * 1.4)) * Math.min(1, r * 40);
-			const o = (j * PAT_N + i) * 4;
-			patternBytes[o] = patternBytes[o + 1] = patternBytes[o + 2] = 255;
-			patternBytes[o + 3] = Math.min(255, Math.round(a * 255));
-		}
+	let patternBytes: Uint8Array | null = null, patRow = 0;
+	function patternStep(budgetMs: number): boolean {
+		if (patRow >= PAT_N / 2) return true;
+		if (!patternBytes) patternBytes = new Uint8Array(PAT_N * PAT_N * 4);
+		const TAU = Math.PI * 2, spacing = PAT_N / PAT_LINES, px = patternBytes, until = Date.now() + budgetMs;
+		do {
+			const j = patRow++, jm = PAT_N - 1 - j, dy = j / (PAT_N - 1) - 0.5;
+			for (let i = 0; i < PAT_N; i++) {
+				const dx = i / (PAT_N - 1) - 0.5, r = Math.sqrt(dx * dx + dy * dy);
+				const ph = r * PAT_LINES + PAT_ARMS * Math.atan2(dy, dx) / TAU;
+				const d = Math.abs(ph - Math.round(ph)) * spacing;
+				const core = Math.min(1, Math.max(0, 1.25 - d)), glow = 0.16 * Math.exp(-(d * d) / 6);
+				const a = Math.min(1, core + glow) * (0.45 + 0.55 * Math.max(0, 1 - r * 1.4)) * Math.min(1, r * 40);
+				const v = Math.min(255, Math.round(a * 255)), o = (j * PAT_N + i) * 4, om = (jm * PAT_N + (PAT_N - 1 - i)) * 4;
+				px[o] = px[o + 1] = px[o + 2] = px[om] = px[om + 1] = px[om + 2] = 255;
+				px[o + 3] = px[om + 3] = v;
+			}
+		} while (patRow < PAT_N / 2 && Date.now() < until);
+		return patRow >= PAT_N / 2;
 	}
 
 	const CIRC_N = 64;
@@ -1368,6 +1381,7 @@ Il2Cpp.perform(() => {
 		setSize.v = Math.round(style.scale / UI_SCALE * 100);
 	}
 
+	let menuFps = 0, menuFpsAt = 0;
 	function begin(title: string, open?: { v: boolean }, flags?: { noTitle?: boolean; follow?: string }): boolean {
 		if (open && !open.v) return false;
 		let w = wins.get(title);
@@ -1421,7 +1435,11 @@ Il2Cpp.perform(() => {
 		const fpsLine = w.order === 0 && !w.collapsed;
 		if (classic) {
 			T(style.pad, 2, w.W - style.pad * 2 - closeW, th - 2, title, C.Text, ALIGN_LEFT, L_FRAME);
-			if (fpsLine) T(style.pad, th - 4, 400, lineH(), "FPS: " + fps.toFixed(1), C.Text, ALIGN_LEFT, L_FRAME);
+			if (fpsLine) {
+				const now = Date.now();
+				if (now - menuFpsAt >= 500) { menuFpsAt = now; menuFps = fps; }
+				T(style.pad, th - 4, 400, lineH(), "FPS: " + menuFps.toFixed(1), C.Text, ALIGN_LEFT, L_FRAME);
+			}
 		} else {
 			RR(0, 0, w.W, th, focused ? C.TitleBgActive : C.TitleBg, L_FRAME, 2, w.collapsed ? ALL_CORNERS : TOP_CORNERS);
 			if (arrowB.hov) RR(4, 4, th - 8, th - 8, C.ButtonHovered, L_FILL);
@@ -2505,9 +2523,11 @@ Il2Cpp.perform(() => {
 	}
 	function getPatternTex(): any {
 		if (patternTried || !WINDOW_PATTERN) return patternTex;
+		if (!patternStep(2)) return null;
 		patternTried = true;
-		try { patternTex = uploadTexture(patternBytes, PAT_N); log("background pattern ready"); }
+		try { patternTex = uploadTexture(patternBytes!, PAT_N); log("background pattern ready"); }
 		catch (e) { log("background pattern off: " + e); }
+		patternBytes = null;
 		return patternTex;
 	}
 
@@ -2660,6 +2680,7 @@ Il2Cpp.perform(() => {
 		log("menu assets were freed (scene load) - rebuilding");
 		shapesTried = false; roundOK = false; meshMode = "";
 		circleTex = ringTex = triTex = glyphTex = unitMesh = quadMesh = uiMat = topMat = null;
+		glyphMeshes.clear();
 		meshCache.clear();
 		for (const w of wins.values()) {
 			if (w.root) { try { destroy(w.root); } catch {} }
@@ -2731,6 +2752,7 @@ Il2Cpp.perform(() => {
 
 	function ensureWinObjects(w: Win): boolean {
 		if (w.root && !alive(w.root)) {
+			for (const pool of w.gpool) for (const e of pool) if (e && !e.k.empty) releaseGlyphMesh(e.k.s);
 			w.root = w.rootT = w.canvas = w.canvasT = w.pattern = null;
 			w.buckets = []; w.rpool = []; w.tpool = []; w.gpool = []; w.rootOn = false; w.poseDirty = true;
 		}
@@ -2897,6 +2919,25 @@ Il2Cpp.perform(() => {
 		if (k.s !== c.s) { call(t, "set_text", Il2Cpp.string(c.s)); k.s = c.s; }
 		if (!same4(k.col, c.c)) { call(t, "set_color", col(c.c)); k.col = c.c.slice(); }
 	}
+	const glyphMeshes = new Map<string, { mesh: any; refs: number }>();
+	function acquireGlyphMesh(str: string): any {
+		const hit = glyphMeshes.get(str);
+		if (hit) { hit.refs++; return hit.mesh; }
+		const q = glyphQuads(str);
+		const mesh = buildMesh(q.verts, q.uvs, q.tris);
+		glyphMeshes.set(str, { mesh, refs: 1 });
+		if (glyphMeshes.size > 400) {
+			for (const [key, g] of glyphMeshes) {
+				if (glyphMeshes.size <= 300) break;
+				if (g.refs <= 0) { destroy(g.mesh); glyphMeshes.delete(key); }
+			}
+		}
+		return mesh;
+	}
+	function releaseGlyphMesh(str: string | undefined) {
+		const g = str !== undefined ? glyphMeshes.get(str) : undefined;
+		if (g) g.refs--;
+	}
 	function syncGlyphText(w: Win, b: number, i: number, c: TCmd) {
 		const pool = w.gpool[b];
 		let e = pool[i];
@@ -2912,13 +2953,12 @@ Il2Cpp.perform(() => {
 		if (!e.cr) return;
 		const str = plainText(c.s);
 		if (k.s !== str) {
-			const q = glyphQuads(str);
-			if (!q.tris.length) { k.s = str; k.empty = true; }
+			if (!/[^ ]/.test(str)) { releaseGlyphMesh(k.s); k.s = str; k.empty = true; }
 			else try {
-				const mesh = buildMesh(q.verts, q.uvs, q.tris);
+				const mesh = acquireGlyphMesh(str);
 				call(e.cr, "SetMesh", mesh);
-				if (e.gmesh) destroy(e.gmesh);
-				e.gmesh = mesh; k.s = str; k.empty = false;
+				releaseGlyphMesh(k.s);
+				k.s = str; k.empty = false;
 			} catch (err) { errOnce("glyph mesh", err); return; }
 		}
 		if (k.empty) { setCull(e, true); return; }
@@ -2963,7 +3003,7 @@ Il2Cpp.perform(() => {
 				call(e.tr, "set_localScale", v3(1, 1, 1));
 				k.geo = geo; k.angle = angle; k.at = now;
 			} catch (err) { errOnce("pattern mesh", err); }
-		} else if (style.spin && k.angle !== angle && (meshMode === "arrays" || now - k.at >= 33)) {
+		} else if (style.spin && k.angle !== angle && now - k.at >= 33) {
 			const uvs = spiralUVs(e.ppts, w.W, w.H, angle);
 			let ok = meshMode === "arrays" && setMeshUVs(e, uvs);
 			if (!ok) {
@@ -3055,7 +3095,7 @@ Il2Cpp.perform(() => {
 
 	let laser: any = null, laserOn = false;
 	function syncLaser() {
-		const show = setLaser.v && io.open && io.hasRay;
+		const show = setLaser.v && io.open && io.hasRay && pointerMode === "ray";
 		if (!show) {
 			if (laser && laserOn && alive(laser.go)) { call(laser.go, "SetActive", false); laserOn = false; }
 			return;
@@ -3241,6 +3281,7 @@ Il2Cpp.perform(() => {
 		updateRig();
 		runMainQueue();
 		initResources();
+		if (WINDOW_PATTERN && !patternTried) patternStep(2);
 		if (!greeted) { greeted = true; notify(MENU_TITLE + " loaded"); }
 		try { onUpdate(); } catch (e) { errOnce("onUpdate", e); }
 		try { pluginsFrame(); } catch (e) { errOnce("plugins", e); }

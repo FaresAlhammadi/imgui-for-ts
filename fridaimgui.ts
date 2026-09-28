@@ -1058,8 +1058,14 @@ Il2Cpp.perform(() => {
 	const tabCount = new Map<string, number>();
 	const tabNext = new Map<string, string>();
 	let bar: { id: string; y: number; nx: number; h: number; n: number; contentY: number; pageH: number;
-		side?: boolean; sideX?: number; sideY?: number; sideW?: number; topY?: number; textSum?: number } | null = null;
+		side?: boolean; sideX?: number; sideY?: number; sideW?: number; topY?: number; textSum?: number;
+		widths?: number[]; ids?: string[]; scrolling?: boolean; first?: number; last?: number; pad?: number; stripW?: number } | null = null;
 	const tabTextSum = new Map<string, number>();
+	// horizontal tab scrolling: last frame's tab text widths + ids, the first visible tab, and thumbstick carry-over
+	const tabWidths = new Map<string, number[]>(), tabIds = new Map<string, string[]>(), tabFirst = new Map<string, number>();
+	let tabStickAcc = 0;
+	const TAB_MIN_PAD = 12;
+	const tabArrowW = () => style.tabH;
 	const sliderIds = new Set<string>();
 	let scrollDrag: { win: Win; y: number; start: number; on: boolean } | null = null;
 	let sbGrab = 0;
@@ -1331,13 +1337,14 @@ Il2Cpp.perform(() => {
 		line(x + s * 0.2, y + s * 0.52, x + s * 0.42, y + s * 0.74, t, c, L_FILL);
 		line(x + s * 0.42, y + s * 0.74, x + s * 0.82, y + s * 0.26, t, c, L_FILL);
 	}
-	// dir 0 = pointing down, 1 = pointing right
+	// dir 0 = pointing down, 1 = pointing right, 2 = pointing left
 	function arrow(x: number, y: number, s: number, dir: number, c: number[], l: number = L_FILL) {
-		if (rectMode === "mesh" && roundOK && triTex && quadMesh) { R(x, y, s, s, c, l, dir === 1 ? -90 : 0, 0, ALL_CORNERS, TEX_TRI); return; }
+		if (rectMode === "mesh" && roundOK && triTex && quadMesh) { R(x, y, s, s, c, l, dir === 1 ? -90 : dir === 2 ? 90 : 0, 0, ALL_CORNERS, TEX_TRI); return; }
 		const n = 5, step = s * 0.64 / n;
 		for (let k = 0; k < n; k++) {
 			const len = s * 0.84 * (1 - k / n);
 			if (dir === 1) R(x + s * 0.2 + k * step, y + (s - len) / 2, step + 0.5, len, c, l);
+			else if (dir === 2) R(x + s * 0.8 - (k + 1) * step, y + (s - len) / 2, step + 0.5, len, c, l);
 			else R(x + (s - len) / 2, y + s * 0.2 + k * step, len, step + 0.5, c, l);
 		}
 	}
@@ -1845,6 +1852,7 @@ Il2Cpp.perform(() => {
 		}
 		const next = tabNext.get(bar.id);
 		if (next !== undefined) { tabSel.set(bar.id, next); tabNext.delete(bar.id); win.scroll = win.scrollTarget = 0; }
+		if (!side) layoutTabs(win, next !== undefined);
 		if (!measuring && style.pageMode !== 2) {
 			bar.pageH = style.pageMode === 0 ? style.pageH : measure(settings);
 			win.clipOn = true; win.clipTop = bar.contentY; win.clipBot = bar.contentY + bar.pageH;
@@ -1852,6 +1860,38 @@ Il2Cpp.perform(() => {
 			if (Math.abs(win.scrollTarget - win.scroll) < 0.5) win.scroll = win.scrollTarget;
 		}
 		return true;
+	}
+	// When the tabs can't all fit (even with tight padding) the strip shows a run of whole tabs that fits,
+	// plus < > buttons on the right; pointing at the strip and pushing the thumbstick also scrolls it.
+	function layoutTabs(win: Win, selChanged: boolean) {
+		const b = bar!;
+		b.widths = []; b.ids = []; b.scrolling = false;
+		const ws = tabWidths.get(b.id), ids = tabIds.get(b.id);
+		if (!ws || !ids || !ws.length) return;
+		const n = ws.length, full = fullW(), natural = ws.reduce((a, w) => a + w + TAB_MIN_PAD * 2, 0);
+		if (natural <= full) { tabFirst.delete(b.id); return; }
+		const avail = full - tabArrowW() * 2 - 6, tw = (i: number) => ws[i] + TAB_MIN_PAD * 2;
+		let first = Math.max(0, Math.min(n - 1, tabFirst.get(b.id) ?? 0));
+		const overStrip = mouseWin === win && mouseY >= b.y && mouseY < b.y + b.h && mouseX >= style.pad && mouseX < style.pad + full;
+		if (overStrip && io.scroll) {
+			tabStickAcc += io.scroll; io.scroll = 0;
+			while (tabStickAcc > 60) { first = Math.min(n - 1, first + 1); tabStickAcc -= 60; }
+			while (tabStickAcc < -60) { first = Math.max(0, first - 1); tabStickAcc += 60; }
+		} else if (!overStrip) tabStickAcc = 0;
+		const lastFrom = (f: number) => { let used = 0, l = f - 1; while (l + 1 < n && used + tw(l + 1) <= avail) { used += tw(l + 1); l++; } return Math.max(f, l); };
+		// bring the selected tab into view when the selection changes (or the first time), not while browsing
+		const selIdx = selChanged || !tabFirst.has(b.id) ? ids.indexOf(tabSel.get(b.id) ?? "") : -1;
+		if (selIdx >= 0 && selIdx < first) first = selIdx;
+		while (selIdx >= 0 && selIdx > lastFrom(first) && first < selIdx) first++;
+		// never leave a gap at the right end
+		while (first > 0 && lastFrom(first - 1) === n - 1) first--;
+		const last = lastFrom(first);
+		let used = 0;
+		for (let i = first; i <= last; i++) used += tw(i);
+		tabFirst.set(b.id, first);
+		b.scrolling = true; b.first = first; b.last = last;
+		b.pad = TAB_MIN_PAD + Math.max(0, avail - used) / (2 * (last - first + 1));
+		b.stripW = avail;
 	}
 	function tabItem(label: string): boolean {
 		if (!bar) return false;
@@ -1873,28 +1913,53 @@ Il2Cpp.perform(() => {
 		} else {
 			// ImGui "resize down" fitting: tabs hug their text, padding shrinks when they would overflow the bar
 			const n = tabCount.get(bar.id) ?? 0, gap = 0, txw = textW(disp), sum = tabTextSum.get(bar.id);
-			let padX = style.tabPadX;
-			if (n > 0 && sum !== undefined) padX = Math.max(4, Math.min(padX, (fullW() - gap * (n - 1) - sum) / (2 * n)));
+			const idx = bar.n;
+			bar.n++;
+			bar.widths!.push(txw); bar.ids!.push(tid);
 			bar.textSum = (bar.textSum ?? 0) + txw;
-			const tw = style.tabsFill && n > 0 ? (fullW() - gap * (n - 1)) / n : txw + padX * 2;
-			const x = bar.nx, idx = bar.n;
-			bar.nx += tw + gap; bar.n++;
-			// one connected strip: only its outer ends are rounded (left end on the first tab, right end on the last)
-			const ends = (idx === 0 ? 1 | 8 : 0) | (n > 0 && idx === n - 1 ? 2 | 4 : 0);
+			sel = tabSel.get(bar.id) === tid;
+			if (bar.scrolling && (idx < bar.first! || idx > bar.last!)) { win.clipOn = clip; return sel; }
+			let padX = style.tabPadX;
+			if (bar.scrolling) padX = bar.pad!;
+			else if (n > 0 && sum !== undefined) padX = Math.max(4, Math.min(padX, (fullW() - gap * (n - 1) - sum) / (2 * n)));
+			const tw = style.tabsFill && n > 0 && !bar.scrolling ? (fullW() - gap * (n - 1)) / n : txw + padX * 2;
+			const x = bar.nx;
+			bar.nx += tw + gap;
+			// one connected strip: only its outer ends are rounded (left end on the first shown tab, right end on the last)
+			const firstShown = bar.scrolling ? bar.first! : 0, lastShown = bar.scrolling ? bar.last! : n - 1;
+			const ends = (idx === firstShown ? 1 | 8 : 0) | (n > 0 && idx === lastShown ? 2 | 4 : 0);
 			const b = behavior(tid, x, bar.y, tw, bar.h);
 			if (b.clicked) tabNext.set(bar.id, tid);
-			sel = tabSel.get(bar.id) === tid;
 			R(x, bar.y, tw, bar.h, sel ? C.TabActive : b.hov ? C.TabHovered : C.Tab, L_FRAME, 0, ends ? TAB_ROUNDING : 0, ends);
 			T(x, bar.y, tw, bar.h, disp, sel ? C.TextOnActive : C.Text, ALIGN_CENTER, L_FRAME);
 		}
 		win.clipOn = clip;
 		return sel;
 	}
+	function drawTabArrows(id: string, y: number, h: number, first: number, last: number, n: number) {
+		const aw = tabArrowW(), x0 = style.pad + fullW() - aw * 2, as = arrowSize();
+		const btn = (i: number, dir: number, enabled: boolean, step: number) => {
+			const x = x0 + i * aw, b = behavior(id + "/##tabscroll" + i, x, y, aw, h);
+			const c = !enabled ? fade(C.Tab, 0.5) : b.held ? C.TabActive : b.hov ? C.TabHovered : C.Tab;
+			R(x, y, aw, h, c, L_FRAME, 0, TAB_ROUNDING, i === 0 ? 1 | 8 : 2 | 4);
+			arrow(x + (aw - as) / 2, y + (h - as) / 2, as, dir, enabled ? C.Text : C.TextDisabled);
+			if (b.clicked && enabled) tabFirst.set(id, Math.max(0, Math.min(n - 1, first + step)));
+		};
+		btn(0, 2, first > 0, -1);
+		btn(1, 1, last < n - 1, 1);
+	}
 	function endTabBar() {
 		const win = cur;
 		if (bar && win && !measuring) {
 			tabCount.set(bar.id, bar.n);
-			if (!bar.side) tabTextSum.set(bar.id, bar.textSum ?? 0);
+			if (!bar.side) {
+				tabTextSum.set(bar.id, bar.textSum ?? 0);
+				tabWidths.set(bar.id, bar.widths ?? []); tabIds.set(bar.id, bar.ids ?? []);
+				const clipWas = win.clipOn;
+				win.clipOn = false;
+				if (bar.scrolling) drawTabArrows(bar.id, bar.y, bar.h, bar.first!, bar.last!, bar.n);
+				win.clipOn = clipWas;
+			}
 			if (win.clipOn) {
 				const used = win.cy - bar.contentY, pageH = bar.pageH, maxScroll = Math.max(0, used - pageH);
 				if (io.scroll && (mouseWin === win || (!mouseWin && win.order === 0))) win.scrollTarget += io.scroll;

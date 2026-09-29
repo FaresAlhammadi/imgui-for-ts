@@ -46,6 +46,7 @@ const CLASSIC_TITLE  = true;
 const MENU_KEYBOARD  = true;
 const PIXEL_FONT     = true;
 const TAB_ROUNDING   = 9;
+const TITLE_FPS      = true;      // FPS line under the title
 const FONT_PREFERENCE = ["RobotoMono-Medium", "RobotoMono-Regular", "CourierPrime", "LiberationMono", "consola", "LiberationSans", "Roboto-Regular"];
 
 const EXTRA_FRAME_HOOKS = ["HurricaneVR.Framework.Core.Player.HVRPlayerController",
@@ -842,6 +843,24 @@ Il2Cpp.perform(() => {
 	}
 
 	const THEMES: { [name: string]: { [k: string]: number[] } } = {
+		ImGuiDark: {
+			Text: [1, 1, 1, 1], TextDisabled: [0.50, 0.50, 0.50, 1], TextOnActive: [1, 1, 1, 1],
+			WindowBg: [0.06, 0.06, 0.06, 0.94], Pattern: [0.26, 0.59, 0.98, 0.10], PopupBg: [0.08, 0.08, 0.08, 0.94], Border: [0.43, 0.43, 0.50, 0.50],
+			TitleBg: [0.04, 0.04, 0.04, 1], TitleBgActive: [0.16, 0.29, 0.48, 1], MenuBarBg: [0.14, 0.14, 0.14, 1],
+			RowBg: [1, 1, 1, 0.03], RowHover: [0.26, 0.59, 0.98, 0.20],
+			FrameBg: [0.16, 0.29, 0.48, 0.54], FrameBgHovered: [0.26, 0.59, 0.98, 0.40], FrameBgActive: [0.26, 0.59, 0.98, 0.67],
+			Check: [0.26, 0.59, 0.98, 1], CheckMark: [0.26, 0.59, 0.98, 1],
+			SliderFill: [0.24, 0.52, 0.88, 0.60], SliderFillActive: [0.26, 0.59, 0.98, 0.80], SliderGrab: [0.24, 0.52, 0.88, 1], SliderGrabActive: [0.26, 0.59, 0.98, 1],
+			Button: [0.26, 0.59, 0.98, 0.40], ButtonHovered: [0.26, 0.59, 0.98, 1], ButtonActive: [0.06, 0.53, 0.98, 1],
+			Header: [0.26, 0.59, 0.98, 0.31], HeaderHovered: [0.26, 0.59, 0.98, 0.80], HeaderActive: [0.26, 0.59, 0.98, 1],
+			Separator: [0.43, 0.43, 0.50, 0.50], Tab: [0.18, 0.35, 0.58, 0.86], TabHovered: [0.26, 0.59, 0.98, 0.80], TabActive: [0.20, 0.41, 0.68, 1],
+			PlotHistogram: [0.90, 0.70, 0, 1], Cursor: [1, 1, 1, 1], Laser: [0.26, 0.59, 0.98, 0.7], Accent: [0.26, 0.59, 0.98, 1],
+			Grip: [0.26, 0.59, 0.98, 0.20], GripHovered: [0.26, 0.59, 0.98, 0.67], GripActive: [0.26, 0.59, 0.98, 0.95],
+			ModalDim: [0.80, 0.80, 0.80, 0.35], Discord: [0.35, 0.4, 0.95, 0.9], DiscordHovered: [0.45, 0.5, 1, 1],
+			ScrollbarBg: [0.02, 0.02, 0.02, 0.53], ScrollbarGrab: [0.31, 0.31, 0.31, 1], ScrollbarGrabHovered: [0.41, 0.41, 0.41, 1], ScrollbarGrabActive: [0.51, 0.51, 0.51, 1],
+			TableHeaderBg: [0.19, 0.19, 0.20, 1], TableBorderStrong: [0.31, 0.31, 0.35, 1], TableBorderLight: [0.23, 0.23, 0.25, 1], TableRowBgAlt: [1, 1, 1, 0.06],
+			ListRow: [0.16, 0.29, 0.48, 0.30], ListRowAlt: [0.16, 0.29, 0.48, 0.45], NoticeTitle: [1, 0.80, 0.40, 1], NoticeBorder: [1, 0.78, 0.40, 0.75],
+		},
 		Skire: {
 			Text: [0.92, 0.91, 0.95, 1], TextDisabled: [0.60, 0.57, 0.68, 1], TextOnActive: [1, 1, 1, 1],
 			WindowBg: [0.035, 0.028, 0.055, 0.80], Pattern: [0.72, 0.56, 0.96, 0.70], PopupBg: [0.10, 0.08, 0.15, 0.97], Border: [0.46, 0.41, 0.62, 0.55],
@@ -1072,7 +1091,7 @@ Il2Cpp.perform(() => {
 	const tabNext = new Map<string, string>();
 	let bar: { id: string; y: number; nx: number; h: number; n: number; contentY: number; pageH: number;
 		side?: boolean; sideX?: number; sideY?: number; sideW?: number; topY?: number; textSum?: number;
-		widths?: number[]; ids?: string[]; scrolling?: boolean; first?: number; last?: number; pad?: number; stripW?: number } | null = null;
+		widths?: number[]; ids?: string[]; scrolling?: boolean; first?: number; last?: number; pad?: number; stripW?: number; area?: boolean } | null = null;
 	const tabTextSum = new Map<string, number>();
 	// horizontal tab scrolling: last frame's tab text widths + ids, the first visible tab, and thumbstick carry-over
 	const tabWidths = new Map<string, number[]>(), tabIds = new Map<string, string[]>(), tabFirst = new Map<string, number>();
@@ -1096,6 +1115,8 @@ Il2Cpp.perform(() => {
 	}
 	let measuring = false;
 	let fps = 0, lastMs = Date.now();
+	const lastMouse = { x: -1, y: -1 };
+	let clickCount = 0;
 
 	function newWin(title: string): Win {
 		return {
@@ -1219,6 +1240,7 @@ Il2Cpp.perform(() => {
 		const down = inp.down && io.hasRay && io.open;
 		io.pressed = down && !io.down;
 		io.released = !down && io.down;
+		if (down && !io.down) clickCount++;
 		io.down = down;
 
 		if (!io.open) { activeId = ""; activeWin = null; dragWin = null; openPopup = null; }
@@ -1232,6 +1254,7 @@ Il2Cpp.perform(() => {
 			dragWin.poseDirty = true;
 		}
 
+		lastMouse.x = mouseX; lastMouse.y = mouseY;
 		mouseWin = null; mouseX = mouseY = -1; mouseT = 0;
 		if (!io.hasRay || !io.open) return;
 		if (activeWin && activeWin.wasVisible) {
@@ -1432,7 +1455,7 @@ Il2Cpp.perform(() => {
 			dragWin = w; dragT = mouseT; dragLX = mouseX; dragLY = mouseY;
 		}
 		const focused = mouseWin === w || dragWin === w;
-		const fpsLine = w.order === 0 && !w.collapsed;
+		const fpsLine = TITLE_FPS && w.order === 0 && !w.collapsed;
 		if (classic) {
 			T(style.pad, 2, w.W - style.pad * 2 - closeW, th - 2, title, C.Text, ALIGN_LEFT, L_FRAME);
 			if (fpsLine) {
@@ -2004,11 +2027,117 @@ Il2Cpp.perform(() => {
 		btn(0, 2, first > 0, -1);
 		btn(1, 1, last < n - 1, 1);
 	}
+	// A scrolling region with no tabs: everything until endScrollArea() is clipped to `height`
+	// and scrolls with the thumbstick, by dragging, or with the scrollbar.
+	function beginScrollArea(id: string, height: number = style.pageH): boolean {
+		const win = cur!;
+		bar = { id: win.title + "/" + id, y: win.cy, nx: style.pad + win.indent, h: 0, n: 0, contentY: win.cy, pageH: Infinity, area: true };
+		if (!measuring) {
+			bar.pageH = height;
+			win.clipOn = true; win.clipTop = bar.contentY; win.clipBot = bar.contentY + height;
+			win.scroll += (win.scrollTarget - win.scroll) * 0.35;
+			if (Math.abs(win.scrollTarget - win.scroll) < 0.5) win.scroll = win.scrollTarget;
+		}
+		return true;
+	}
+	function endScrollArea() { endTabBar(); }
+
+	// Dear ImGui-style menu bar under the title: returns { menu, item } for the item clicked this frame
+	function menuBar(menus: { label: string; items: string[] }[]): { menu: number; item: number } | null {
+		const win = cur!;
+		const h = lineH() + 4, y = win.cy - style.pad;
+		R(0, y, win.W, h, C.MenuBarBg ?? C.TitleBg, L_FRAME);
+		let x = style.pad * 0.5, result: { menu: number; item: number } | null = null;
+		for (let i = 0; i < menus.length; i++) {
+			const m = menus[i], id = win.title + "/##menu/" + m.label, tw = textW(m.label) + 16;
+			const b = behavior(id, x, y, tw, h);
+			if (b.hov && openPopup && openPopup.indexOf("/##menu/") >= 0 && openPopup !== id) openPopup = id;
+			if (b.clicked) openPopup = openPopup === id ? null : id;
+			const open = openPopup === id;
+			if (open || b.hov) R(x, y, tw, h, open ? C.HeaderActive : C.HeaderHovered, L_FRAME);
+			T(x, y, tw, h, m.label, C.Text, ALIGN_CENTER, L_FRAME);
+			if (open) {
+				const rowH = lineH() + 4;
+				let pw = tw;
+				for (const it of m.items) pw = Math.max(pw, textW(it) + 40);
+				const pr: Rect = { x, y: y + h, w: pw, h: m.items.length * rowH + 8 };
+				if (io.pressed && !b.hov && (mouseWin !== win || !inRect(mouseX, mouseY, win.popup))) openPopup = null;
+				else {
+					win.popupNext = pr;
+					R(pr.x, pr.y, pr.w, pr.h, C.PopupBg, L_POPUP);
+					R(pr.x, pr.y, pr.w, 1, C.Border, L_POPUPROW); R(pr.x, pr.y + pr.h - 1, pr.w, 1, C.Border, L_POPUPROW);
+					R(pr.x, pr.y, 1, pr.h, C.Border, L_POPUPROW); R(pr.x + pr.w - 1, pr.y, 1, pr.h, C.Border, L_POPUPROW);
+					for (let k = 0; k < m.items.length; k++) {
+						const iy = pr.y + 4 + k * rowH, ib = behavior(id + "/" + k, pr.x + 4, iy, pr.w - 8, rowH);
+						if (ib.hov) R(pr.x + 4, iy, pr.w - 8, rowH, C.HeaderHovered, L_POPUPROW);
+						T(pr.x + 14, iy, pr.w - 20, rowH, m.items[k], C.Text, ALIGN_LEFT, L_POPUPROW);
+						if (ib.clicked) { result = { menu: i, item: k }; openPopup = null; }
+					}
+				}
+			}
+			x += tw;
+		}
+		win.cy = y + h + style.pad; win.rowY = win.cy; win.rowH = 0;
+		return result;
+	}
+	function bulletText(str: string, c: number[] = C.Text) {
+		const h = lineH(), d = Math.round(style.fontSize * 0.28);
+		const [x, y] = item(textW(str) + h, h);
+		R(x + (h - d) / 2, y + (h - d) / 2, d, d, c, L_FRAME, 0, d / 2);
+		T(x + h, y, Math.max(textW(str), fullW() - h), h, str, c, ALIGN_LEFT, L_FRAME);
+	}
+	function textWrapped(str: string, c: number[] = C.Text) {
+		for (const l of wrapText(str, fullW() - 4)) text(l, c);
+	}
+	function radioButton(label: string, r: { v: number }, value: number): boolean {
+		const [disp, id] = labelId(label);
+		const d = style.frameH, lw = textW(disp);
+		const [x, y] = item(d + style.spacingX + lw, d);
+		const b = behavior(id, x, y, d + style.spacingX + lw, d);
+		if (b.clicked) r.v = value;
+		R(x, y, d, d, b.held ? C.FrameBgActive : b.hov ? C.FrameBgHovered : C.FrameBg, L_FRAME, 0, d / 2);
+		if (r.v === value) { const k = d * 0.3; R(x + k, y + k, d - k * 2, d - k * 2, C.CheckMark ?? C.Check, L_FILL, 0, (d - k * 2) / 2); }
+		T(x + d + style.spacingX, y, lw, d, disp, C.Text, ALIGN_LEFT, L_FRAME);
+		return b.clicked;
+	}
+	function tooltip(lines: string[]) {
+		const win = cur!;
+		if (mouseWin !== win) return;
+		const lh = lineH(), w = Math.max(...lines.map(l => textW(l))) + 20, h = lines.length * lh + 12;
+		const x = Math.min(mouseX + 18, win.W - w), y = mouseY + 18;
+		R(x, y, w, h, C.PopupBg, L_MODAL);
+		R(x, y, w, 1, C.Border, L_MODAL); R(x, y + h - 1, w, 1, C.Border, L_MODAL); R(x, y, 1, h, C.Border, L_MODAL); R(x + w - 1, y, 1, h, C.Border, L_MODAL);
+		for (let i = 0; i < lines.length; i++) T(x + 10, y + 6 + i * lh, w - 20, lh, lines[i], C.Text, ALIGN_LEFT, L_MODAL);
+	}
+	// "(?)" after the previous widget; hovering it shows desc
+	function helpMarker(desc: string) {
+		sameLine();
+		const s2 = "(?)", w = textW(s2), h = lineH();
+		const [x, y] = item(w, h);
+		T(x, y, w + 4, h, s2, C.TextDisabled, ALIGN_LEFT, L_FRAME);
+		if (!measuring && mouseWin === cur && inRect(mouseX, mouseY, { x, y, w, h }) && !(cur!.clipOn && (mouseY < cur!.clipTop || mouseY >= cur!.clipBot)))
+			tooltip(wrapText(desc, 520));
+	}
+	function table(headers: string[], rows: string[][]) {
+		const fw = fullW(), n = headers.length, cw = fw / n, rh = lineH() + 4;
+		const [x, y] = item(fw, rh * (rows.length + 1));
+		R(x, y, fw, rh, C.TableHeaderBg ?? C.Header, L_ROW);
+		for (let c = 0; c < n; c++) T(x + c * cw + 8, y, cw - 12, rh, headers[c], C.Text, ALIGN_LEFT, L_FRAME);
+		for (let r = 0; r < rows.length; r++) {
+			const ry = y + rh * (r + 1);
+			if (r % 2) R(x, ry, fw, rh, C.TableRowBgAlt ?? C.RowBg, L_ROW);
+			for (let c = 0; c < n; c++) T(x + c * cw + 8, ry, cw - 12, rh, rows[r][c] ?? "", C.Text, ALIGN_LEFT, L_FRAME);
+			R(x, ry, fw, 1, C.TableBorderLight ?? C.Separator, L_FRAME);
+		}
+		const strong = C.TableBorderStrong ?? C.Separator, th = rh * (rows.length + 1);
+		R(x, y, fw, 1, strong, L_FRAME); R(x, y + th - 1, fw, 1, strong, L_FRAME);
+		for (let c = 0; c <= n; c++) R(Math.min(x + c * cw, x + fw - 1), y, 1, th, c === 0 || c === n ? strong : (C.TableBorderLight ?? C.Separator), L_FRAME);
+	}
 	function endTabBar() {
 		const win = cur;
 		if (bar && win && !measuring) {
 			tabCount.set(bar.id, bar.n);
-			if (!bar.side) {
+			if (!bar.side && !bar.area) {
 				tabTextSum.set(bar.id, bar.textSum ?? 0);
 				tabWidths.set(bar.id, bar.widths ?? []); tabIds.set(bar.id, bar.ids ?? []);
 				const clipWas = win.clipOn;
@@ -2044,8 +2173,8 @@ Il2Cpp.perform(() => {
 					win.scrollTarget = Math.max(0, Math.min(maxScroll, win.scrollTarget));
 					win.scroll = Math.max(0, Math.min(maxScroll, win.scroll));
 					ty = win.clipTop + (trackH - thumbH) * (win.scroll / maxScroll);
-					R(tx, win.clipTop, 6, trackH, C.FrameBg, L_FRAME, 0, 3);
-					R(tx, ty, 6, thumbH, sb.held ? C.SliderFillActive : sb.hov ? C.SliderGrab : C.SliderFill, L_FILL, 0, 3);
+					R(tx, win.clipTop, 6, trackH, C.ScrollbarBg ?? C.FrameBg, L_FRAME, 0, 3);
+					R(tx, ty, 6, thumbH, sb.held ? (C.ScrollbarGrabActive ?? C.SliderFillActive) : sb.hov ? (C.ScrollbarGrabHovered ?? C.SliderGrab) : (C.ScrollbarGrab ?? C.SliderFill), L_FILL, 0, 3);
 				} else { win.scrollTarget = win.scroll = 0; }
 				win.sbVisible = maxScroll > 0;
 				win.cy = bar.contentY + pageH; win.rowY = win.cy; win.rowH = 0; win.sameLine = false;
@@ -2667,8 +2796,8 @@ Il2Cpp.perform(() => {
 		if (button("Send Test Notification")) notify("Test notification");
 		sameLine();
 		if (button("Recenter")) for (const w of wins.values()) place(w);
-		sameLine();
-		if (button("Join Discord")) confirm("Open Discord?", ["This opens " + DISCORD_URL.replace("https://", "") + " in your browser.", "The game will go to the background."],
+		if (DISCORD_URL) sameLine();
+		if (DISCORD_URL && button("Join Discord")) confirm("Open Discord?", ["This opens " + DISCORD_URL.replace("https://", "") + " in your browser.", "The game will go to the background."],
 			"Open", () => { if (!openUrl(DISCORD_URL)) notify("Couldn't open a browser here - " + DISCORD_URL.replace("https://", ""), 10); });
 	}
 	function info() {
@@ -3624,8 +3753,10 @@ Il2Cpp.perform(() => {
 	const ui = {
 		begin, end, text, textColored: (c: number[], s: string) => text(s, c), textDisabled: (s: string) => text(s, C.TextDisabled),
 		button, checkbox, sliderFloat, sliderInt, combo, collapsingHeader, separator, spacing, sameLine, indent, unindent,
-		progressBar, beginTabBar, tabItem, endTabBar, notice, ncsMods, treeNode, treePop, inputText, listBox, settings, info, notify, confirm, openUrl, style, ref,
-		pluginsTab, plugins: () => filePlugins(), pluginPage, debugTab, soundboardTab, filePath, pluginDir: pluginDirStr,
+		progressBar, beginTabBar, tabItem, endTabBar, notice, beginScrollArea, endScrollArea, menuBar, bulletText, textWrapped, radioButton, helpMarker, tooltip, table,
+		io: () => ({ mouseX, mouseY, dx: mouseX >= 0 && lastMouse.x >= 0 ? mouseX - lastMouse.x : 0, dy: mouseY >= 0 && lastMouse.y >= 0 ? mouseY - lastMouse.y : 0,
+			hovering: !!mouseWin, down: io.down, pressed: io.pressed, released: io.released, scroll: io.scroll, clicks: clickCount, open: io.open, pointer: pointerMode, fps }), treeNode, treePop, inputText, listBox, settings, info, notify, confirm, openUrl, style, ref,
+		ncsMods, pluginsTab, plugins: () => filePlugins(), pluginPage, debugTab, soundboardTab, filePath, pluginDir: pluginDirStr,
 		theme: (name: string) => applyTheme(name), themes: () => THEME_NAMES.slice(),
 		fonts: () => loadedFonts.map(f => f.name),
 		recenter: () => { for (const w of wins.values()) place(w); },

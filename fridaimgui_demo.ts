@@ -1,18 +1,28 @@
+/*
+ * fridaimgui_demo.ts - a recreation of Dear ImGui's own demo window (ImGui::ShowDemoWindow() from
+ * github.com/ocornut/imgui) as a VR menu, on the same library as fridaimgui.ts.
+ *
+ *   frida -U --runtime=v8 -l frida-il2cpp-bridge.js -l fridaimgui_demo.ts "<process name>"
+ *
+ * Stock Dear ImGui look: StyleColorsDark() colours, square corners, blue title bar with the collapse
+ * arrow, Menu / Examples / Tools menu bar and the demo's sections. Tools opens the menu's real
+ * settings, metrics, plugins and soundboard.
+ */
 declare const Il2Cpp: any;
 
 declare const console: any;
 
-const MENU_TITLE     = "astraeus debug imgui";
-const DISCORD_URL    = "https://discord.gg/UxUGNmTKJG";
-const MENU_VERSION   = "v1.0";
+const MENU_TITLE     = "Dear ImGui Demo";
+const DISCORD_URL: string = "";
+const MENU_VERSION   = "";
 const MENU_HOLD_X    = false;
 const SHOW_LASER     = true;
-const THEME          = "Skire";
+const THEME          = "ImGuiDark";
 const ROW_LAYOUT     = false;
 const SIDEBAR_TABS   = false;
 const SIDEBAR_WIDTH  = 150;
-const WINDOW_WIDTH   = 1118;
-const WINDOW_PATTERN = true;
+const WINDOW_WIDTH   = 640;
+const WINDOW_PATTERN = false;
 const SPIRAL_SPIN    = 30;
 const SPIRAL_CENTER  = 0.03;
 const HUD_ENABLED    = true;
@@ -22,8 +32,8 @@ const UI_SCALE       = 0.00042;
 const MENU_SIZE      = 74;        // % of UI_SCALE (Settings > Menu Size %)
 const WRIST_MENU     = true;
 const WRIST_OFFSET   = [0.12, 0.04, 0.02];
-const ROUNDING       = 6;
-const PAGE_HEIGHT    = 560;
+const ROUNDING       = 0;
+const PAGE_HEIGHT    = 700;
 const ALWAYS_ON_TOP  = true;
 const STABILIZE      = true;
 const SCROLL_SPEED   = 900;
@@ -33,11 +43,11 @@ const SHAPES         = "mesh";
 const SPAWN_DISTANCE = 0.45;
 const RAY_PITCH_DEG  = 0;
 const TRIG_THRESH    = 0.55;
-const CLASSIC_TITLE  = true;
+const CLASSIC_TITLE  = false;
 const MENU_KEYBOARD  = true;
 const PIXEL_FONT     = true;
-const TAB_ROUNDING   = 9;
-const TITLE_FPS      = true;      // FPS line under the title
+const TAB_ROUNDING   = 0;
+const TITLE_FPS      = false;      // FPS line under the title
 const FONT_PREFERENCE = ["RobotoMono-Medium", "RobotoMono-Regular", "CourierPrime", "LiberationMono", "consola", "LiberationSans", "Roboto-Regular"];
 
 const EXTRA_FRAME_HOOKS = ["HurricaneVR.Framework.Core.Player.HVRPlayerController",
@@ -112,86 +122,250 @@ function placeholderGate(ui: any, tab: string): boolean {
 }
 const DEMO_ITEMS = ["mod.frb", "config.json", "preset_a.frb", "preset_b.frb"];
 
+
+// ── Dear ImGui Demo (recreation of ImGui::ShowDemoWindow() from github.com/ocornut/imgui) ──
+const IMGUI_VERSION = "1.92.9", IMGUI_VERSION_NUM = 19290;
+const D = {
+	noMenu: ref(false), noScrollbar: ref(false), noCollapse: ref(false), noClose: ref(false), noNav: ref(false),
+	noBackground: ref(false), noBringToFront: ref(false), unsaved: ref(false),
+	navKeyboard: ref(true), navGamepad: ref(false), noMouse: ref(false), noMouseCursor: ref(false),
+	clicked: 0, check: ref(true), radio: ref(0), combo: ref(0), input: ref("Hello, world!"), sliderI: ref(0), sliderF: ref(0.123),
+	counter: 0, progress: 0, progressDir: 1, treeSel: ref(false), closable: ref(true), align: ref(0),
+	showMetrics: false, showStyle: false, showPlugins: false, showSound: false,
+};
+const COMBO_ITEMS = ["AAAA", "BBBB", "CCCC", "DDDD", "EEEE", "FFFF", "GGGG", "HHHH", "IIIIIII", "JJJJ", "KKKKKKK"];
+const DEMO_MENUS = [
+	{ label: "Menu", items: ["New", "Open", "Save", "Save As..", "Quit"] },
+	{ label: "Examples", items: ["Main menu bar", "Console", "Log", "Simple layout", "Property editor", "Long text display",
+		"Auto-resizing window", "Simple overlay", "Custom rendering", "Documents"] },
+	{ label: "Tools", items: ["Metrics/Debugger", "Style Editor", "Plugins", "Soundboard", "About Dear ImGui"] },
+];
+
 function onUpdate(): void {
-	if (S.exampleToggle.v) {
+	D.progress += 0.01 * D.progressDir;
+	if (D.progress >= 1.1) { D.progress = 1.1; D.progressDir = -1; }
+	if (D.progress <= -0.1) { D.progress = -0.1; D.progressDir = 1; }
+}
+
+function demoMenuBar(ui: any) {
+	const r = ui.menuBar(DEMO_MENUS);
+	if (!r) return;
+	const it = DEMO_MENUS[r.menu].items[r.item];
+	if (r.menu === 2) {
+		if (it === "Metrics/Debugger") D.showMetrics = !D.showMetrics;
+		else if (it === "Style Editor") D.showStyle = !D.showStyle;
+		else if (it === "Plugins") D.showPlugins = !D.showPlugins;
+		else if (it === "Soundboard") D.showSound = !D.showSound;
+		else ui.confirm("About Dear ImGui", ["Dear ImGui " + IMGUI_VERSION + " (" + IMGUI_VERSION_NUM + ")",
+			"By Omar Cornut and all Dear ImGui contributors.", "Recreated for VR with the pixel ProggyClean font."], "Close", () => {}, "OK");
+	} else ui.notify(it + " (not recreated in VR)");
+}
+
+function demoHelp(ui: any) {
+	ui.text("ABOUT THIS DEMO:");
+	ui.bulletText("Sections below are demonstrating many aspects of the library.");
+	ui.bulletText("The \"Examples\" menu above leads to more demo contents.");
+	ui.bulletText("The \"Tools\" menu above gives access to: About Box, Style Editor,");
+	ui.text("    and Metrics/Debugger (general purpose Dear ImGui debugging tool).");
+	ui.separator();
+	ui.text("PROGRAMMER GUIDE:");
+	ui.bulletText("See the ShowDemoWindow() code in imgui_demo.cpp. <- you are here!");
+	ui.bulletText("See comments in imgui.cpp.");
+	ui.bulletText("See example applications in the examples/ folder.");
+	ui.bulletText("Read the FAQ at https://www.dearimgui.com/faq/");
+	ui.separator();
+	ui.text("USER GUIDE:");
+	ui.bulletText("Point with the right controller, trigger to click.");
+	ui.bulletText("Click the arrow in the title bar to collapse the window.");
+	ui.bulletText("Drag the title bar to move, the bottom-right corner to resize.");
+	ui.bulletText("Push the right thumbstick to scroll.");
+	ui.bulletText("Click a text field to type with the on-screen keyboard.");
+}
+
+function demoConfiguration(ui: any) {
+	if (ui.treeNode("Configuration##2")) {
+		ui.checkbox("io.ConfigFlags: NavEnableKeyboard", D.navKeyboard);
+		ui.helpMarker("Enable keyboard controls.");
+		ui.checkbox("io.ConfigFlags: NavEnableGamepad", D.navGamepad);
+		ui.helpMarker("Enable gamepad controls.");
+		ui.checkbox("io.ConfigFlags: NoMouse", D.noMouse);
+		ui.helpMarker("Instruct dear imgui to disable mouse inputs and interactions.");
+		ui.checkbox("io.ConfigFlags: NoMouseCursorChange", D.noMouseCursor);
+		ui.treePop();
+	}
+	if (ui.treeNode("Backend Flags")) {
+		ui.textDisabled("Backend: Unity uGUI canvas (Frida + il2cpp bridge)");
+		ui.textDisabled("Renderer: pixel ProggyClean atlas + canvas meshes");
+		ui.treePop();
+	}
+	if (ui.treeNode("Style")) {
+		ui.helpMarker("The same contents can be accessed in 'Tools->Style Editor'.");
+		ui.settings();
+		ui.treePop();
+	}
+}
+
+function demoWindowOptions(ui: any) {
+	ui.checkbox("No titlebar", D.noClose); ui.sameLine(); ui.checkbox("No scrollbar", D.noScrollbar);
+	ui.checkbox("No menu", D.noMenu); ui.sameLine(); ui.checkbox("No collapse", D.noCollapse);
+	ui.checkbox("No nav", D.noNav); ui.sameLine(); ui.checkbox("No background", D.noBackground);
+	ui.checkbox("No bring to front", D.noBringToFront); ui.sameLine(); ui.checkbox("Unsaved document", D.unsaved);
+}
+
+function demoWidgets(ui: any) {
+	if (ui.treeNode("Basic")) {
+		ui.separator();
+		if (ui.button("Button")) D.clicked++;
+		if (D.clicked & 1) { ui.sameLine(); ui.text("Thanks for clicking me!"); }
+		ui.checkbox("checkbox", D.check);
+		ui.radioButton("radio a", D.radio, 0); ui.sameLine();
+		ui.radioButton("radio b", D.radio, 1); ui.sameLine();
+		ui.radioButton("radio c", D.radio, 2);
+		ui.text("Hold to repeat:"); ui.sameLine();
+		if (ui.button("-##ctr")) D.counter--; ui.sameLine();
+		if (ui.button("+##ctr")) D.counter++; ui.sameLine();
+		ui.text(String(D.counter));
+		ui.separator();
+		ui.combo("combo", D.combo, COMBO_ITEMS);
+		ui.helpMarker("Using the simplified one-liner Combo API here.");
+		ui.inputText("input text", D.input);
+		ui.helpMarker("Click to type on the on-screen keyboard.");
+		ui.sliderInt("slider int", D.sliderI, -1, 3);
+		ui.helpMarker("CTRL+click to input value.");
+		ui.sliderFloat("slider float", D.sliderF, 0, 1, 3);
+		ui.treePop();
+	}
+	if (ui.treeNode("Trees")) {
+		if (ui.treeNode("Basic trees")) {
+			for (let i = 0; i < 5; i++) {
+				if (ui.treeNode("Child " + i + "##child" + i, i === 0)) {
+					ui.text("blah blah"); ui.sameLine();
+					if (ui.button("button##tb" + i)) ui.notify("Child " + i + " button");
+					ui.treePop();
+				}
+			}
+			ui.treePop();
+		}
+		ui.treePop();
+	}
+	if (ui.treeNode("Collapsing Headers")) {
+		ui.checkbox("Show 2nd header", D.closable);
+		if (ui.collapsingHeader("Header", true)) for (let i = 0; i < 5; i++) ui.text("Some content " + i);
+		if (D.closable.v && ui.collapsingHeader("Header with a close button", true)) for (let i = 0; i < 5; i++) ui.text("More content " + i);
+		ui.treePop();
+	}
+	if (ui.treeNode("Text")) {
+		ui.textColored([1, 0, 1, 1], "Pink");
+		ui.textColored([1, 1, 0, 1], "Yellow");
+		ui.textDisabled("Disabled");
+		ui.helpMarker("The TextDisabled color is stored in ImGuiStyle.");
+		ui.textWrapped("This text should automatically wrap on the edge of the window. The current implementation for text wrapping follows simple rules suitable for English and possibly other languages.");
+		ui.treePop();
+	}
+	if (ui.treeNode("Plotting")) {
+		ui.progressBar(Math.max(0, Math.min(1, D.progress)));
+		ui.progressBar(Math.max(0, Math.min(1, D.progress)), Math.round(Math.max(0, Math.min(1, D.progress)) * 1753) + "/1753");
+		ui.treePop();
+	}
+}
+
+function demoLayout(ui: any) {
+	if (ui.treeNode("Basic Horizontal Layout")) {
+		ui.textWrapped("(Use ImGui::SameLine() to keep adding items to the right of the preceding item)");
+		ui.text("Two items: Hello"); ui.sameLine(); ui.textColored([1, 1, 0, 1], "Sailor");
+		ui.text("Normal buttons"); ui.sameLine();
+		ui.button("Banana"); ui.sameLine(); ui.button("Apple"); ui.sameLine(); ui.button("Corniflower");
+		ui.treePop();
+	}
+	if (ui.treeNode("Widgets Width")) {
+		ui.text("SetNextItemWidth/PushItemWidth(100)");
+		ui.sliderFloat("float##w1", D.sliderF, 0, 1, 3);
+		ui.treePop();
+	}
+	if (ui.treeNode("Text Baseline Alignment")) {
+		ui.bulletText("Text baseline:");
+		ui.text("One"); ui.sameLine(); ui.text("Two"); ui.sameLine(); ui.text("Three");
+		ui.treePop();
+	}
+}
+
+function demoPopups(ui: any) {
+	if (ui.treeNode("Popups")) {
+		ui.textWrapped("When a popup is active, it inhibits interacting with windows that are behind the popup.");
+		ui.combo("##select", D.align, ["Bream", "Haddock", "Mackerel", "Pollock", "Tilefish"]);
+		ui.treePop();
+	}
+	if (ui.treeNode("Modals")) {
+		ui.textWrapped("Modal windows are like popups but the user cannot close them by clicking outside.");
+		if (ui.button("Delete..")) ui.confirm("Delete?", ["All those beautiful files will be deleted.", "This operation cannot be undone!"], "OK", () => ui.notify("deleted (not really)"), "Cancel");
+		ui.treePop();
+	}
+}
+
+function demoTables(ui: any) {
+	if (ui.treeNode("Basic")) {
+		const rows: string[][] = [];
+		for (let r = 0; r < 4; r++) rows.push([0, 1, 2].map(c => "Hello " + c + "," + r));
+		ui.table(["One", "Two", "Three"], rows);
+		ui.treePop();
+	}
+	if (ui.treeNode("Borders, background")) {
+		ui.table(["Name", "Type", "Size"], [["imgui.cpp", "Source", "1.2 MB"], ["imgui_demo.cpp", "Source", "480 KB"], ["imgui_draw.cpp", "Source", "260 KB"], ["imgui.h", "Header", "240 KB"]]);
+		ui.treePop();
+	}
+}
+
+function demoInputs(ui: any) {
+	const io = ui.io();
+	if (ui.treeNode("Inputs", true)) {
+		ui.helpMarker("This is a simplified view. See more detailed input state:\n- in 'Tools->Metrics/Debugger->Inputs'.");
+		if (io.mouseX >= 0) ui.text("Mouse pos: (" + Math.round(io.mouseX) + ", " + Math.round(io.mouseY) + ")");
+		else ui.text("Mouse pos: <INVALID>");
+		ui.text("Mouse delta: (" + Math.round(io.dx) + ", " + Math.round(io.dy) + ")");
+		ui.text("Mouse down:" + (io.down ? " b0" : ""));
+		ui.text("Mouse wheel: " + (io.scroll / 100).toFixed(1));
+		ui.text("Mouse clicked count: " + io.clicks);
+		ui.text("Keys down:");
+		ui.text("Keys mods:");
+		ui.text("Chars queue:");
+		ui.treePop();
+	}
+	if (ui.treeNode("Outputs", true)) {
+		ui.helpMarker("The value of io.WantCaptureMouse and io.WantCaptureKeyboard are normally set by Dear ImGui to instruct your application of how to route inputs.");
+		ui.text("io.WantCaptureMouse: " + (io.hovering ? 1 : 0));
+		ui.text("io.WantCaptureMouseUnlessPopupClose: " + (io.hovering ? 1 : 0));
+		ui.text("io.WantCaptureKeyboard: 0");
+		ui.text("io.WantTextInput: 0");
+		ui.text("io.WantSetMousePos: 0");
+		ui.text("io.NavActive: 0, io.NavVisible: 0");
+		ui.treePop();
+	}
+	if (ui.treeNode("Pointer")) {
+		ui.text("Pointer mode: " + io.pointer);
+		ui.text("Framerate: " + io.fps.toFixed(1) + " FPS");
+		ui.treePop();
 	}
 }
 
 function drawMenu(ui: any): void {
 	if (ui.begin(MENU_TITLE)) {
-		ui.beginTabBar("tabs");
-
-		if (ui.tabItem("Player")) {
-			if (placeholderGate(ui, "Player")) {
-				if (ui.collapsingHeader("Movement", true)) {
-					ui.checkbox("Placeholder Toggle 1", PH.toggles[0]);
-					ui.checkbox("Placeholder Toggle 2", PH.toggles[1]);
-					ui.sliderFloat("Placeholder Speed", PH.speed, 1, 10, 2);
-					if (ui.treeNode("Placeholder Group", true)) {
-						ui.combo("Placeholder Hand", PH.hand, HANDS);
-						ui.checkbox("Placeholder Toggle 3", PH.toggles[2]);
-						ui.checkbox("Placeholder Toggle 4", PH.toggles[3]);
-						ui.treePop();
-					}
-				}
-				if (ui.collapsingHeader("Actions", true)) {
-					if (ui.button("Placeholder Button 1")) phClick(ui, "Placeholder Button 1");
-					ui.sameLine();
-					if (ui.button("Placeholder Button 2")) phClick(ui, "Placeholder Button 2");
-				}
-			}
-		}
-
-		if (ui.tabItem("Credits")) {
-			ui.spacing();
-			ui.textColored([0.78, 0.66, 1, 1], MENU_TITLE);
-			ui.separator();
-			ui.spacing();
-			ui.text("Skire  -  Inspiration");
-			ui.text("Astraeus  -  Coding (everything)");
-			ui.spacing();
-			ui.separator();
-			ui.textDisabled("Universal Il2Cpp VR menu");
-			if (DISCORD_URL) { ui.spacing(); if (ui.button("Discord")) ui.openUrl(DISCORD_URL); }
-		}
-
-		if (ui.tabItem("Items")) {
-			if (placeholderGate(ui, "Items")) {
-				if (ui.collapsingHeader("Items", true)) {
-					ui.listBox("##phitems", PH.item, PH_ITEMS, 8);
-					ui.text("Selected: " + PH_ITEMS[PH.item.v]);
-				}
-				if (ui.collapsingHeader("Options", true)) {
-					ui.sliderFloat("Placeholder Scale", PH.scale, 0.1, 5, 2);
-					ui.sameLine();
-					if (ui.button("Reset##phscale")) PH.scale.v = 1.0;
-					ui.checkbox("Placeholder Toggle 5", PH.toggles[4]);
-					if (ui.button("Use Selected Item")) phClick(ui, PH_ITEMS[PH.item.v]);
-				}
-			}
-		}
-
-		if (ui.tabItem("Spawning")) {
-			if (placeholderGate(ui, "Spawning")) {
-				if (ui.collapsingHeader("Spawner", true)) {
-					ui.combo("Placeholder Mode", PH.mode, MODES);
-					ui.sliderInt("Placeholder Amount", PH.count, 1, 20);
-					ui.checkbox("Placeholder Toggle 6", PH.toggles[5]);
-					if (ui.button("Spawn Placeholder")) phClick(ui, "Spawn x" + PH.count.v);
-					ui.sameLine();
-					if (ui.button("Clear Placeholders")) phClick(ui, "Clear");
-				}
-			}
-		}
-
-		if (ui.tabItem("Soundboard")) ui.soundboardTab();
-
-		if (ui.tabItem("Debug")) ui.debugTab();
-
-		if (ui.tabItem("Plugins")) ui.pluginsTab();
-		if (ui.tabItem("Info")) ui.info();
-		if (ui.tabItem("Settings")) ui.settings();
-		ui.endTabBar();
+		if (!D.noMenu.v) demoMenuBar(ui);
+		ui.beginScrollArea("demo");
+		ui.text("dear imgui says hello! (" + IMGUI_VERSION + ") (" + IMGUI_VERSION_NUM + ")");
+		ui.spacing();
+		if (D.showMetrics && ui.collapsingHeader("Metrics/Debugger", true)) ui.info();
+		if (D.showStyle && ui.collapsingHeader("Style Editor", true)) ui.settings();
+		if (D.showPlugins && ui.collapsingHeader("Plugins", true)) ui.pluginsTab();
+		if (D.showSound && ui.collapsingHeader("Soundboard", true)) ui.soundboardTab();
+		if (ui.collapsingHeader("Help")) demoHelp(ui);
+		if (ui.collapsingHeader("Configuration")) demoConfiguration(ui);
+		if (ui.collapsingHeader("Window options")) demoWindowOptions(ui);
+		if (ui.collapsingHeader("Widgets")) demoWidgets(ui);
+		if (ui.collapsingHeader("Layout & Scrolling")) demoLayout(ui);
+		if (ui.collapsingHeader("Popups & Modal windows")) demoPopups(ui);
+		if (ui.collapsingHeader("Tables & Columns")) demoTables(ui);
+		if (ui.collapsingHeader("Inputs & Focus")) demoInputs(ui);
+		ui.endScrollArea();
 	}
 	ui.end();
 }
@@ -913,8 +1087,8 @@ Il2Cpp.perform(() => {
 	};
 	const THEME_NAMES = Object.keys(THEMES);
 	const style = {
-		scale: UI_SCALE * MENU_SIZE / 100, width: WINDOW_WIDTH, titleH: 30, pad: 12, spacingX: 10, spacingY: 6,
-		frameH: 34, framePadX: 14, fontSize: 24, grabW: 18, tabH: 46, tabPadX: 22, itemW: 0.65,
+		scale: UI_SCALE * MENU_SIZE / 100, width: WINDOW_WIDTH, titleH: 29, pad: 12, spacingX: 10, spacingY: 6,
+		frameH: 29, framePadX: 12, fontSize: 24, grabW: 18, tabH: 46, tabPadX: 22, itemW: 0.65,
 		rows: ROW_LAYOUT, rowH: 38, rowGap: 3, labelFrac: 0.42, tabsFill: false, opacity: 1, rounding: ROUNDING,
 		sidebar: SIDEBAR_TABS, sidebarW: SIDEBAR_WIDTH,
 		wrist: WRIST_MENU, onTop: ALWAYS_ON_TOP, stabilize: STABILIZE,

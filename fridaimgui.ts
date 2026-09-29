@@ -3216,7 +3216,7 @@ Il2Cpp.perform(() => {
 	// if a game stripped that loader, .wav still works via a small decoder here. Clips are cached.
 	let soundDir = "";
 	const SB = { files: [] as string[], sel: ref(0), volume: ref(1.0), loop: ref(false), scanned: false,
-		status: "", playing: "", mkdir: false };
+		status: "", playing: "", mkdir: false, mic: ref(false), hearSelf: ref(true) };
 	const sbClips = new Map<string, any>();
 	let sbPending: { file: string; req: any; dh: any; started: number } | null = null;
 	let sbSrc: any = null, sbGo: any = null;
@@ -3226,6 +3226,54 @@ Il2Cpp.perform(() => {
 	const UWRMediaCls = findClassAnywhere("UnityEngine.Networking.UnityWebRequestMultimedia");
 	const DHAudioCls = findClassAnywhere("UnityEngine.Networking.DownloadHandlerAudioClip");
 	const AUDIO_TYPE: { [ext: string]: number } = { mp3: 13, ogg: 14, wav: 20 };
+
+	// ── Mic mode: Photon Voice's Recorder can take an AudioClip as its source instead of the
+	// microphone, so the sound goes out over voice chat. Games on other voice systems (Vivox,
+	// Normcore, custom) don't have this and mic mode says so. Your real mic comes back when the
+	// sound ends, on Stop, or when mic mode is switched off.
+	const RecorderCls = findClassAnywhere("Photon.Voice.Unity.Recorder");
+	const mic = { recs: [] as any[], at: 0, live: false, until: 0, vad: new Map<any, any>() };
+	function micRecorders(): any[] {
+		const now = Date.now();
+		if (now - mic.at < 3000 && mic.recs.every(r => alive(r))) return mic.recs;
+		mic.at = now;
+		mic.recs = objectsOf(RecorderCls).filter(r => !isRemote(r)).map(keep);
+		return mic.recs;
+	}
+	function micRestart(r: any) {
+		if (call(r, "RestartRecording") === null) call(r, "RestartRecording", true);
+	}
+	function micFeed(clip: any, len: number): number {
+		if (!RecorderCls) return 0;
+		const recs = micRecorders();
+		for (const r of recs) {
+			if (!mic.vad.has(r)) mic.vad.set(r, call(r, "get_VoiceDetection"));
+			call(r, "set_SourceType", 1);                 // 1 = AudioClip
+			call(r, "set_AudioClip", clip);
+			call(r, "set_LoopAudioClip", SB.loop.v);
+			call(r, "set_VoiceDetection", false);         // don't gate quiet parts of the sound
+			call(r, "set_TransmitEnabled", true);
+			call(r, "set_RecordingEnabled", true);
+			micRestart(r);
+		}
+		mic.live = recs.length > 0;
+		mic.until = mic.live && !SB.loop.v && len > 0 ? Date.now() + len * 1000 + 250 : 0;
+		return recs.length;
+	}
+	function micRestore() {
+		if (!mic.live) return;
+		mic.live = false; mic.until = 0;
+		for (const r of mic.recs) {
+			if (!alive(r)) continue;
+			call(r, "set_SourceType", 0);                 // 0 = Microphone
+			call(r, "set_AudioClip", null);
+			call(r, "set_LoopAudioClip", false);
+			const vad = mic.vad.get(r);
+			if (vad !== undefined && vad !== null) call(r, "set_VoiceDetection", !!vad);
+			micRestart(r);
+		}
+		mic.vad.clear();
+	}
 
 	function sbScan() {
 		SB.scanned = true;
@@ -3252,20 +3300,29 @@ Il2Cpp.perform(() => {
 		} catch (e) { errOnce("soundboard source", e); return null; }
 	}
 	function sbPlayClip(file: string, clip: any) {
-		const src = sbSource();
-		if (!src) { SB.status = "no AudioSource in this game"; return; }
-		call(src, "Stop");
-		call(src, "set_clip", clip);
-		call(src, "set_volume", SB.volume.v);
-		call(src, "set_loop", SB.loop.v);
-		call(src, "Play");
-		SB.playing = file;
 		let len = 0;
 		try { len = Number(clip.method("get_length", 0).invoke()); } catch {}
-		SB.status = "playing " + file + (len > 0 ? " (" + len.toFixed(1) + "s)" : "");
+		const src = sbSource();
+		if (src) call(src, "Stop");
+		const local = !SB.mic.v || SB.hearSelf.v;
+		if (local) {
+			if (!src) { SB.status = "no AudioSource in this game"; return; }
+			call(src, "set_clip", clip);
+			call(src, "set_volume", SB.volume.v);
+			call(src, "set_loop", SB.loop.v);
+			call(src, "Play");
+		}
+		let where = "";
+		if (SB.mic.v) {
+			const n = micFeed(clip, len);
+			where = n ? " - on voice chat" : " - no voice recorder found (not in a lobby?), local only";
+		} else micRestore();
+		SB.playing = file;
+		SB.status = "playing " + file + (len > 0 ? " (" + len.toFixed(1) + "s)" : "") + where;
 	}
 	function sbStop() {
 		if (sbSrc && alive(sbSrc)) call(sbSrc, "Stop");
+		micRestore();
 		sbPending = null; SB.playing = ""; SB.status = "stopped";
 	}
 	function sbPlay(file: string) {
@@ -3362,12 +3419,16 @@ Il2Cpp.perform(() => {
 		if (button("Play Selected") && SB.files.length) sbPlay(SB.files[SB.sel.v]);
 		if (sliderFloat("Volume", SB.volume, 0, 1, 2) && sbSrc && alive(sbSrc)) call(sbSrc, "set_volume", SB.volume.v);
 		if (checkbox("Loop", SB.loop) && sbSrc && alive(sbSrc)) call(sbSrc, "set_loop", SB.loop.v);
+		if (RecorderCls) {
+			if (checkbox("Mic Mode", SB.mic, "others hear it over voice chat") && !SB.mic.v) micRestore();
+			if (SB.mic.v) checkbox("Hear It Yourself", SB.hearSelf);
+		} else text("Mic Mode: this game doesn't use Photon Voice, so sounds are local only.", C.TextDisabled);
 		if (SB.files.length) { if (listBox("##sounds", SB.sel, SB.files, 8)) sbPlay(SB.files[SB.sel.v]); }
 		else text("No sounds yet - copy .mp3 files into the folder above, then Refresh.", C.TextDisabled);
 		if (SB.status) text(SB.status, C.TextDisabled);
 		if (!AudioSourceCls) text("This game has no AudioSource class - the soundboard can't play here.", [1, 0.45, 0.5, 1]);
 	}
-	(globalThis as any).sb = { play: (f: string) => sbPlay(f), stop: sbStop, list: () => { sbScan(); return SB.files; }, dir: () => soundDir };
+	(globalThis as any).sb = { play: (f: string) => sbPlay(f), stop: sbStop, mic: (on: boolean = !SB.mic.v) => { SB.mic.v = on; if (!on) micRestore(); return on; }, list: () => { sbScan(); return SB.files; }, dir: () => soundDir };
 
 	function debugTab() {
 		if (collapsingHeader("Runtime", true)) {
@@ -3505,6 +3566,7 @@ Il2Cpp.perform(() => {
 		if (!greeted) { greeted = true; notify(MENU_TITLE + " loaded"); }
 		try { onUpdate(); } catch (e) { errOnce("onUpdate", e); }
 		if (sbPending) { try { sbPoll(); } catch (e) { errOnce("soundboard", e); sbPending = null; } }
+		if (mic.until && Date.now() > mic.until) { try { micRestore(); } catch (e) { errOnce("mic restore", e); } }
 		try { pluginsFrame(); } catch (e) { errOnce("plugins", e); }
 
 		const now = Date.now(), dt = Math.min(0.1, Math.max(0.001, (now - lastTickMs) / 1000));

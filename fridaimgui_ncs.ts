@@ -222,7 +222,13 @@ function drawHud(hud: any): void {
 console.log("[imgui] loading");
 
 Il2Cpp.perform(() => {
-	const log = (m: string) => console.log("[imgui] " + m);
+	const logLines: string[] = [];
+	const log = (m: string) => {
+		console.log("[imgui] " + m);
+		const d = new Date(), t = ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2) + ":" + ("0" + d.getSeconds()).slice(-2);
+		for (const line of String(m).split("\n")) { logLines.push("[" + t + "] " + line); }
+		while (logLines.length > 300) logLines.shift();
+	};
 	const _errs = new Set<string>();
 	function errOnce(tag: string, e: any) {
 		const k = tag + ": " + e;
@@ -1074,6 +1080,11 @@ Il2Cpp.perform(() => {
 		popup: Rect | null; popupNext: Rect | null;
 		grip: { hov: boolean; held: boolean };
 		follow?: string;
+		flags?: WinFlags;
+	}
+	interface WinFlags {
+		noTitle?: boolean; follow?: string; noCollapse?: boolean; noMove?: boolean; noResize?: boolean; noBackground?: boolean;
+		noScrollbar?: boolean; noNav?: boolean; unsaved?: boolean; width?: number;
 	}
 
 	const wins = new Map<string, Win>();
@@ -1405,12 +1416,13 @@ Il2Cpp.perform(() => {
 	}
 
 	let menuFps = 0, menuFpsAt = 0;
-	function begin(title: string, open?: { v: boolean }, flags?: { noTitle?: boolean; follow?: string }): boolean {
+	function begin(title: string, open?: { v: boolean }, flags?: WinFlags): boolean {
 		if (open && !open.v) return false;
 		let w = wins.get(title);
 		if (!w) { w = newWin(title); wins.set(title, w); }
 		cur = w;
-		w.visible = true; w.W = style.width;
+		w.flags = flags ?? {};
+		w.visible = true; w.W = flags && flags.width ? flags.width : style.width;
 		w.rc.length = 0; w.tc.length = 0;
 		if (flags && flags.follow) w.follow = flags.follow;
 		if (!w.placed) place(w);
@@ -1420,9 +1432,9 @@ Il2Cpp.perform(() => {
 			return true;
 		}
 
-		const th = style.titleH, classic = CLASSIC_TITLE;
-		if (classic) w.collapsed = false;
-		const arrowB = classic ? { hov: false, held: false, clicked: false } : behavior(title + "/##collapse", 0, 0, th, th);
+		const th = style.titleH, classic = CLASSIC_TITLE, noCollapse = !!(flags && flags.noCollapse);
+		if (classic || noCollapse) w.collapsed = false;
+		const arrowB = classic || noCollapse ? { hov: false, held: false, clicked: false } : behavior(title + "/##collapse", 0, 0, th, th);
 		if (arrowB.clicked) w.collapsed = !w.collapsed;
 		let closeW = 0;
 		if (open) {
@@ -1431,6 +1443,9 @@ Il2Cpp.perform(() => {
 			if (cb.hov) RR(w.W - th + 4, 4, th - 8, th - 8, cb.held ? C.ButtonActive : C.ButtonHovered, L_FILL);
 			T(w.W - th, 0, th, th, "X", C.Text, ALIGN_CENTER, L_FRAME);
 			if (cb.clicked) open.v = false;
+			if (flags && flags.unsaved) { const d = Math.round(th * 0.28); R(w.W - th - d - 6, (th - d) / 2, d, d, C.Text, L_FILL, 0, d / 2); closeW += d + 8; }
+		} else if (flags && flags.unsaved) {
+			const d = Math.round(th * 0.28); closeW = d + 16; R(w.W - d - 10, (th - d) / 2, d, d, C.Text, L_FILL, 0, d / 2);
 		}
 		const titleW = textW(title);
 		let discordW = 0;
@@ -1451,7 +1466,7 @@ Il2Cpp.perform(() => {
 		}
 		const tbx = classic ? 0 : th + titleW + 12 + discordW;
 		const tb = behavior(title + "/##title", tbx, 0, w.W - tbx - closeW, th);
-		if (tb.hov && io.pressed && activeId === title + "/##title" && !isWrist(w)) {
+		if (tb.hov && io.pressed && activeId === title + "/##title" && !isWrist(w) && !(flags && flags.noMove)) {
 			dragWin = w; dragT = mouseT; dragLX = mouseX; dragLY = mouseY;
 		}
 		const focused = mouseWin === w || dragWin === w;
@@ -1465,10 +1480,13 @@ Il2Cpp.perform(() => {
 			}
 		} else {
 			RR(0, 0, w.W, th, focused ? C.TitleBgActive : C.TitleBg, L_FRAME, 2, w.collapsed ? ALL_CORNERS : TOP_CORNERS);
-			if (arrowB.hov) RR(4, 4, th - 8, th - 8, C.ButtonHovered, L_FILL);
-			const as = arrowSize();
-			arrow((th - as) / 2, (th - as) / 2, as, w.collapsed ? 1 : 0, C.Text);
-			T(th, 0, titleW + 8, th, title, C.Text, ALIGN_LEFT, L_FRAME);
+			const tx = noCollapse ? style.pad : th;
+			if (!noCollapse) {
+				if (arrowB.hov) RR(4, 4, th - 8, th - 8, C.ButtonHovered, L_FILL);
+				const as = arrowSize();
+				arrow((th - as) / 2, (th - as) / 2, as, w.collapsed ? 1 : 0, C.Text);
+			}
+			T(tx, 0, titleW + 8, th, title, C.Text, ALIGN_LEFT, L_FRAME);
 			if (MENU_VERSION) T(w.W - closeW - 90, 0, 80, th, MENU_VERSION, C.TextDisabled, ALIGN_RIGHT, L_FRAME);
 			if (fpsLine) {
 				const fpsC = fps >= 65 ? [0.33, 1, 0.4, 1] : fps >= 45 ? [1, 0.85, 0.29, 1] : [1, 0.33, 0.4, 1];
@@ -1477,7 +1495,7 @@ Il2Cpp.perform(() => {
 		}
 
 		w.grip = { hov: false, held: false };
-		if (!w.collapsed) {
+		if (!w.collapsed && !(flags && flags.noResize)) {
 			const gs = 22, gid = title + "/##resize";
 			const gb = behavior(gid, w.W - gs, w.H - gs, gs, gs);
 			if (gb.hov && io.pressed && activeId === gid) resizeStart = { scale: style.scale, mx: mouseX * style.scale, my: mouseY * style.scale };
@@ -1503,14 +1521,16 @@ Il2Cpp.perform(() => {
 		w.popup = w.popupNext; w.popupNext = null;
 		w.hitH = w.popup ? Math.max(w.H, w.popup.y + w.popup.h) : w.H;
 		const wr = winRadius();
-		R(0, 0, w.W, w.H, fade(C.WindowBg, style.opacity), L_BG, 0, wr);
-		if (wr >= 10) R(0, 0, w.W, w.H, C.Border, L_FILL, 0, wr, ALL_CORNERS, TEX_RING);
+		const noBg = !!(w.flags && w.flags.noBackground);
+		if (!noBg) R(0, 0, w.W, w.H, fade(C.WindowBg, style.opacity), L_BG, 0, wr);
+		if (noBg) {}
+		else if (wr >= 10) R(0, 0, w.W, w.H, C.Border, L_FILL, 0, wr, ALL_CORNERS, TEX_RING);
 		else {
 			const bt = 1.5;
 			R(0, 0, w.W, bt, C.Border, L_FILL); R(0, w.H - bt, w.W, bt, C.Border, L_FILL);
 			R(0, bt, bt, w.H - bt * 2, C.Border, L_FILL); R(w.W - bt, bt, bt, w.H - bt * 2, C.Border, L_FILL);
 		}
-		if (!w.collapsed && !w.follow) {
+		if (!w.collapsed && !w.follow && !(w.flags && w.flags.noResize)) {
 			const gc = w.grip.held ? C.GripActive : w.grip.hov ? C.GripHovered : C.Grip;
 			for (let k = 1; k <= 3; k++) line(w.W - 4 - k * 6, w.H - 4, w.W - 4, w.H - 4 - k * 6, 2.5, gc, L_FILL);
 		}
@@ -1754,7 +1774,10 @@ Il2Cpp.perform(() => {
 	// ---- text entry: fields focus the on-screen keyboard window, which types into them ----
 	let kb: { id: string; get: () => string; set: (v: string) => void; alive?: () => boolean } | null = null;
 	let kbShift = false;
+	// runtime switches a menu can drive (the demo's Configuration flags use these)
+	const rt = { keyboard: ref(true), stickScroll: ref(true), cursor: ref(true) };
 	function kbFocus(id: string, get: () => string, set: (v: string) => void, alive?: () => boolean) {
+		if (!rt.keyboard.v) { notify("On-screen keyboard is switched off"); return; }
 		kb = kb && kb.id === id ? null : { id, get, set, alive };
 		kbShift = false;
 	}
@@ -1886,6 +1909,7 @@ Il2Cpp.perform(() => {
 	const KB_ROWS = ["1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm"];
 	function drawKeyboard() {
 		if (!kb) return;
+		if (!rt.keyboard.v) { kb = null; return; }
 		if (kb.alive && !kb.alive()) { kb = null; return; }
 		const main = [...wins.values()].find(w => w.order === 0 && !w.hud);
 		if (!main || !main.placed) return;
@@ -2133,6 +2157,24 @@ Il2Cpp.perform(() => {
 		R(x, y, fw, 1, strong, L_FRAME); R(x, y + th - 1, fw, 1, strong, L_FRAME);
 		for (let c = 0; c <= n; c++) R(Math.min(x + c * cw, x + fw - 1), y, 1, th, c === 0 || c === n ? strong : (C.TableBorderLight ?? C.Separator), L_FRAME);
 	}
+	// reserve a w x h area and draw into it with coordinates relative to its top-left corner
+	function canvas(h: number, w: number = fullW()) {
+		const [x, y] = item(w, h);
+		return {
+			x, y, w, h,
+			rect: (rx: number, ry: number, rw: number, rh: number, c: number[], rounding: number = 0) => R(x + rx, y + ry, rw, rh, c, L_FRAME, 0, rounding),
+			circle: (cx: number, cy: number, r: number, c: number[]) => R(x + cx - r, y + cy - r, r * 2, r * 2, c, L_FRAME, 0, r),
+			ring: (cx: number, cy: number, r: number, c: number[]) => R(x + cx - r, y + cy - r, r * 2, r * 2, c, L_FILL, 0, r, ALL_CORNERS, TEX_RING),
+			line: (x1: number, y1: number, x2: number, y2: number, t: number, c: number[]) => line(x + x1, y + y1, x + x2, y + y2, t, c, L_FILL),
+			triangle: (tx: number, ty: number, size: number, dir: number, c: number[]) => arrow(x + tx, y + ty, size, dir, c, L_FILL),
+			text: (tx: number, ty: number, str: string, c: number[] = C.Text) => T(x + tx, y + ty, textW(str) + 8, lineH(), str, c, ALIGN_LEFT, L_FRAME),
+		};
+	}
+	function selectTab(barId: string, label: string) {
+		if (!cur) return;
+		const id = cur.title + "/" + barId;
+		tabNext.set(id, id + "/" + label);
+	}
 	function endTabBar() {
 		const win = cur;
 		if (bar && win && !measuring) {
@@ -2147,7 +2189,7 @@ Il2Cpp.perform(() => {
 			}
 			if (win.clipOn) {
 				const used = win.cy - bar.contentY, pageH = bar.pageH, maxScroll = Math.max(0, used - pageH);
-				if (io.scroll && (mouseWin === win || (!mouseWin && win.order === 0))) win.scrollTarget += io.scroll;
+				if (io.scroll && !(win.flags && win.flags.noNav) && (mouseWin === win || (!mouseWin && win.order === 0))) win.scrollTarget += io.scroll;
 				if (io.pressed && mouseWin === win && mouseY >= win.clipTop && mouseY < win.clipBot)
 					scrollDrag = { win, y: mouseY, start: win.scrollTarget, on: false };
 				if (scrollDrag && scrollDrag.win === win) {
@@ -2162,10 +2204,11 @@ Il2Cpp.perform(() => {
 				}
 				win.clipOn = false;
 				if (maxScroll > 0) {
+					const hideBar = !!(win.flags && win.flags.noScrollbar);
 					const trackH = pageH - 14, tx = win.W - style.pad - 8, thumbH = Math.max(28, trackH * pageH / used);
 					const sid = win.title + "/##sb";
 					let ty = win.clipTop + (trackH - thumbH) * (win.scroll / maxScroll);
-					const sb = behavior(sid, tx - 6, ty, 20, thumbH);
+					const sb = hideBar ? { hov: false, held: false, clicked: false } : behavior(sid, tx - 6, ty, 20, thumbH);
 					if (sb.hov && io.pressed && activeId === sid) sbGrab = mouseY - ty;
 					if (sb.held && mouseWin === win) {
 						win.scrollTarget = win.scroll = (mouseY - sbGrab - win.clipTop) / (trackH - thumbH) * maxScroll;
@@ -2173,10 +2216,10 @@ Il2Cpp.perform(() => {
 					win.scrollTarget = Math.max(0, Math.min(maxScroll, win.scrollTarget));
 					win.scroll = Math.max(0, Math.min(maxScroll, win.scroll));
 					ty = win.clipTop + (trackH - thumbH) * (win.scroll / maxScroll);
-					R(tx, win.clipTop, 6, trackH, C.ScrollbarBg ?? C.FrameBg, L_FRAME, 0, 3);
-					R(tx, ty, 6, thumbH, sb.held ? (C.ScrollbarGrabActive ?? C.SliderFillActive) : sb.hov ? (C.ScrollbarGrabHovered ?? C.SliderGrab) : (C.ScrollbarGrab ?? C.SliderFill), L_FILL, 0, 3);
+					if (!hideBar) R(tx, win.clipTop, 6, trackH, C.ScrollbarBg ?? C.FrameBg, L_FRAME, 0, 3);
+					if (!hideBar) R(tx, ty, 6, thumbH, sb.held ? (C.ScrollbarGrabActive ?? C.SliderFillActive) : sb.hov ? (C.ScrollbarGrabHovered ?? C.SliderGrab) : (C.ScrollbarGrab ?? C.SliderFill), L_FILL, 0, 3);
 				} else { win.scrollTarget = win.scroll = 0; }
-				win.sbVisible = maxScroll > 0;
+				win.sbVisible = maxScroll > 0 && !(win.flags && win.flags.noScrollbar);
 				win.cy = bar.contentY + pageH; win.rowY = win.cy; win.rowH = 0; win.sameLine = false;
 			}
 			if (bar.side) {
@@ -2631,7 +2674,7 @@ Il2Cpp.perform(() => {
 			let base = "";
 			try { base = String(need(asmCore, "UnityEngine.Application").method("get_persistentDataPath", 0).invoke().content); } catch {}
 			if (!base && appId) base = "/sdcard/Android/data/" + appId + "/files";
-			if (base) { pluginDir = base + "/imgui_plugins"; soundDir = base + "/imgui_sounds"; requestScan(); }
+			if (base) { pluginDir = base + "/imgui_plugins"; soundDir = base + "/imgui_sounds"; requestScan(); try { loadSettings(); } catch (e) { errOnce("load settings", e); } }
 		}
 		for (const pl of pluginList) {
 			if (!pl.frame || pl.enabled === false) continue;
@@ -2773,14 +2816,57 @@ Il2Cpp.perform(() => {
 	const setPageH = ref(style.pageH), setOnTop = ref(ALWAYS_ON_TOP), setStab = ref(STABILIZE), setSpin = ref(SPIRAL_SPIN);
 	const setFont = ref(0), setOpacity = ref(1), setTheme = ref(Math.max(0, THEME_NAMES.indexOf(THEME)));
 	const setLayout = ref(ROW_LAYOUT ? 0 : 1), setPattern = ref(WINDOW_PATTERN), setHud = ref(HUD_ENABLED);
+	function applySize() { setMenuScale(UI_SCALE * setSize.v / 100); style.width = setWidth.v; }
+	// Settings persist per menu (file name from the menu title) in the game's data folder
+	const settingsPath = () => pluginDir ? pluginDir.replace(/\/imgui_plugins$/, "") + "/imgui_settings_" + MENU_TITLE.replace(/[^A-Za-z0-9]+/g, "_") + ".json" : "";
+	function saveSettings(): boolean {
+		const path = settingsPath();
+		if (!path) { notify("Data folder not resolved yet - try again in a second"); return false; }
+		const data = {
+			size: setSize.v, width: setWidth.v, opacity: setOpacity.v, rounding: setRounding.v, theme: THEME_NAMES[setTheme.v],
+			pattern: setPattern.v, spin: setSpin.v, hud: setHud.v, laser: setLaser.v, onTop: setOnTop.v, stabilize: setStab.v,
+			hold: setHold.v, pixelFont: glyphOn.v, layout: setLayout.v, pageMode: setTabH.v, pageH: setPageH.v, wrist: setWrist.v,
+		};
+		try { (File as any).writeAllText(path, JSON.stringify(data, null, 1)); log("settings saved to " + path); return true; }
+		catch (e) { notify("Couldn't save settings: " + e); return false; }
+	}
+	let settingsLoaded = false;
+	function loadSettings() {
+		if (settingsLoaded) return;
+		const path = settingsPath();
+		if (!path) return;
+		settingsLoaded = true;
+		let d: any;
+		try { d = JSON.parse(String((File as any).readAllText(path))); } catch { return; }
+		const num = (v: any, fb: number) => typeof v === "number" && isFinite(v) ? v : fb, bool = (v: any, fb: boolean) => typeof v === "boolean" ? v : fb;
+		setSize.v = num(d.size, setSize.v); setWidth.v = num(d.width, setWidth.v); applySize();
+		setOpacity.v = num(d.opacity, setOpacity.v); style.opacity = setOpacity.v;
+		setRounding.v = num(d.rounding, setRounding.v); style.rounding = setRounding.v;
+		const ti = THEME_NAMES.indexOf(d.theme); if (ti >= 0) { setTheme.v = ti; applyTheme(d.theme); }
+		setPattern.v = bool(d.pattern, setPattern.v); setSpin.v = num(d.spin, setSpin.v); style.spin = setSpin.v;
+		setHud.v = bool(d.hud, setHud.v); setLaser.v = bool(d.laser, setLaser.v);
+		setOnTop.v = bool(d.onTop, setOnTop.v); style.onTop = setOnTop.v;
+		setStab.v = bool(d.stabilize, setStab.v); style.stabilize = setStab.v;
+		setHold.v = num(d.hold, setHold.v); glyphOn.v = bool(d.pixelFont, glyphOn.v);
+		setLayout.v = num(d.layout, setLayout.v); style.rows = setLayout.v === 0;
+		setTabH.v = num(d.pageMode, setTabH.v); style.pageMode = setTabH.v;
+		setPageH.v = num(d.pageH, setPageH.v); style.pageH = setPageH.v;
+		setWrist.v = num(d.wrist, setWrist.v); style.wrist = setWrist.v === 0;
+		for (const w of wins.values()) w.placed = false;
+		log("settings loaded from " + path);
+	}
 	function settings() {
-		if (sliderInt("Menu Size %", setSize, 40, 300)) setMenuScale(UI_SCALE * setSize.v / 100);
-		if (sliderInt("Menu Width", setWidth, 600, 1400)) style.width = setWidth.v;
+		// Size and width only apply on Save: resizing while dragging moved the slider out from under the pointer
+		sliderInt("Menu Size %", setSize, 40, 300);
+		sliderInt("Menu Width", setWidth, 600, 1400);
+		const sizePending = setSize.v !== Math.round(style.scale / UI_SCALE * 100) || setWidth.v !== style.width;
+		if (button(sizePending ? "Save Size (not applied yet)" : "Save Size")) { applySize(); saveSettings(); }
+		if (sizePending) { sameLine(); if (button("Undo##size")) { setSize.v = Math.round(style.scale / UI_SCALE * 100); setWidth.v = style.width; } }
 		if (combo("Menu Position", setWrist, ["Wrist (hold X)", "Floating"])) { style.wrist = setWrist.v === 0; for (const w of wins.values()) place(w); }
 		if (combo("Tab Height", setTabH, ["Fixed (scrolls)", "Match Settings", "Fit Content"])) style.pageMode = setTabH.v;
 		if (style.pageMode === 0 && sliderInt("Page Height", setPageH, 120, 900)) style.pageH = setPageH.v;
-		checkbox("Always On Top", setOnTop, "hands never hide the menu");
-		checkbox("Stabilize", setStab, "no wrist / pointer shake");
+		if (checkbox("Always On Top", setOnTop, "hands never hide the menu")) style.onTop = setOnTop.v;
+		if (checkbox("Stabilize", setStab, "no wrist / pointer shake")) style.stabilize = setStab.v;
 		if (sliderFloat("Menu Opacity", setOpacity, 0.2, 1)) style.opacity = setOpacity.v;
 		if (sliderInt("Rounding", setRounding, 0, 14)) style.rounding = setRounding.v;
 		if (combo("Theme", setTheme, THEME_NAMES)) applyTheme(THEME_NAMES[setTheme.v]);
@@ -2793,6 +2879,7 @@ Il2Cpp.perform(() => {
 		combo("Open With", setHold, ["Hold X", "Toggle X"]);
 		const names = loadedFonts.map(f => f.name);
 		if (names.length && combo("Font", setFont, names)) selectFont(setFont.v);
+		if (button("Save Settings")) { applySize(); if (saveSettings()) notify("Settings saved - they load automatically next time"); }
 		if (button("Send Test Notification")) notify("Test notification");
 		sameLine();
 		if (button("Recenter")) for (const w of wins.values()) place(w);
@@ -2858,7 +2945,7 @@ Il2Cpp.perform(() => {
 		return protectAsset(tex);
 	}
 	function getPatternTex(): any {
-		if (patternTried || !WINDOW_PATTERN) return patternTex;
+		if (patternTried || !setPattern.v) return patternTex;
 		if (!patternStep(2)) return null;
 		patternTried = true;
 		try { patternTex = uploadTexture(patternBytes!, PAT_N); log("background pattern ready"); }
@@ -3167,7 +3254,7 @@ Il2Cpp.perform(() => {
 	}
 	function setCull(e: any, on: boolean) {
 		if (e.k.cull === on) return;
-		if (e.cr) call(e.cr, "set_cull", on);
+		if (e.cr && !e.solo) call(e.cr, "set_cull", on);
 		else call(e.go, "SetActive", !on);
 		e.k.cull = on;
 	}
@@ -3310,13 +3397,14 @@ Il2Cpp.perform(() => {
 		if (!same4(k.col, c.c)) { call(e.cr, "SetColor", col(c.c)); k.col = c.c.slice(); }
 	}
 	function syncPattern(w: Win) {
-		const want = setPattern.v && !w.hud && rectMode === "mesh" && !!getPatternTex();
+		const want = setPattern.v && !w.hud && !(w.flags && w.flags.noBackground) && rectMode === "mesh" && !!getPatternTex();
 		if (!want) { if (w.pattern) setCull(w.pattern, true); return; }
 		if (!w.pattern) {
 			if (budget <= 0) return;
 			budget--;
 			try {
 				w.pattern = makeRect(w.buckets[B_PATTERN]);
+				w.pattern.solo = true;
 				if (w.pattern.cr) call(w.pattern.cr, "SetTexture", patternTex);
 			} catch (e) { errOnce("pattern", e); return; }
 		}
@@ -3385,11 +3473,11 @@ Il2Cpp.perform(() => {
 	}
 	function syncCursor(w: Win) {
 		if (!w.root || !w.rootOn) return;
-		const show = mouseWin === w && mouseX >= 0;
+		const show = rt.cursor.v && mouseWin === w && mouseX >= 0;
 		let e = w.cursorEl;
 		if (!show) { if (e) setCull(e, true); return; }
 		if (!e) {
-			try { e = w.cursorEl = makeRect(w.buckets[B_CURSOR]); } catch (err) { errOnce("cursor", err); return; }
+			try { e = w.cursorEl = makeRect(w.buckets[B_CURSOR]); e.solo = true; } catch (err) { errOnce("cursor", err); return; }
 			if (e.cr && roundOK) { try { call(e.cr, "SetMesh", roundedMesh(10, 10, 5).mesh); } catch {} }
 			else call(e.tr, "set_localScale", v3(10, 10, 1));
 		}
@@ -3753,6 +3841,13 @@ Il2Cpp.perform(() => {
 	const ui = {
 		begin, end, text, textColored: (c: number[], s: string) => text(s, c), textDisabled: (s: string) => text(s, C.TextDisabled),
 		button, checkbox, sliderFloat, sliderInt, combo, collapsingHeader, separator, spacing, sameLine, indent, unindent,
+		canvas, selectTab, config: rt, laser: () => setLaser, onTop: () => setOnTop,
+		setOnTop: (on: boolean) => { setOnTop.v = on; style.onTop = on; },
+		logs: () => logLines, clearLogs: () => { logLines.length = 0; },
+		dataDir: () => (pluginDir ? pluginDir.replace(/\/imgui_plugins$/, "") : ""),
+		readFile: (path: string): string | null => { try { return String((File as any).readAllText(path)); } catch { return null; } },
+		writeFile: (path: string, text: string): boolean => { try { (File as any).writeAllText(path, text); return true; } catch (e) { errOnce("write " + path, e); return false; } },
+		close: () => { menuForced = false; menuOpen = false; },
 		progressBar, beginTabBar, tabItem, endTabBar, notice, beginScrollArea, endScrollArea, menuBar, bulletText, textWrapped, radioButton, helpMarker, tooltip, table,
 		io: () => ({ mouseX, mouseY, dx: mouseX >= 0 && lastMouse.x >= 0 ? mouseX - lastMouse.x : 0, dy: mouseY >= 0 && lastMouse.y >= 0 ? mouseY - lastMouse.y : 0,
 			hovering: !!mouseWin, down: io.down, pressed: io.pressed, released: io.released, scroll: io.scroll, clicks: clickCount, open: io.open, pointer: pointerMode, fps }), treeNode, treePop, inputText, listBox, settings, info, notify, confirm, openUrl, style, ref,
@@ -3846,7 +3941,7 @@ Il2Cpp.perform(() => {
 		updateRig();
 		runMainQueue();
 		initResources();
-		if (WINDOW_PATTERN && !patternTried) patternStep(2);
+		if (setPattern.v && !patternTried) patternStep(2);
 		if (!greeted) { greeted = true; notify(MENU_TITLE + " loaded"); }
 		try { onUpdate(); } catch (e) { errOnce("onUpdate", e); }
 		try { ncsTick(); } catch (e) { errOnce("NCS mods", e); }
@@ -3901,7 +3996,7 @@ Il2Cpp.perform(() => {
 			} catch { rayO = rayD = null; }
 		}
 		let scroll = 0;
-		if (menuOpen) {
+		if (menuOpen && rt.stickScroll.v) {
 			let y = 0;
 			if (ovr.stick && (!stickSrc || stickSrc === "ovr")) { y = ovrRightStickY(); if (Math.abs(y) > 0.2) stickSrc = "ovr"; }
 			if (Math.abs(y) < 0.2 && hvr.inputs && (!stickSrc || stickSrc === "hvr")) { y = hvrStickY(); if (Math.abs(y) > 0.2) stickSrc = "hvr"; }

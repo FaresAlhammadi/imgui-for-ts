@@ -1,17 +1,4 @@
-/*
- * fridaimgui_demo.ts - a recreation of Dear ImGui's own demo window (ImGui::ShowDemoWindow() from
- * github.com/ocornut/imgui) as a VR menu, on the same library as fridaimgui.ts.
- *
- *   frida -U --runtime=v8 -l frida-il2cpp-bridge.js -l fridaimgui_demo.ts "<process name>"
- *
- * Dear ImGui look: StyleColorsDark() colours, blue title bar with the collapse arrow, Menu / Examples /
- * Tools menu bar and the demo's sections, at the universal menu's size with rounded corners. Window
- * options, config flags, the Menu (New/Open/Save/Save As/Quit), every Examples window and the Tools
- * entries all work; Debug / Plugins / Soundboard / Info / Settings tabs sit next to the Demo tab.
- */
 declare const Il2Cpp: any;
-
-declare const console: any;
 
 const MENU_TITLE     = "Dear ImGui Demo";
 const DISCORD_URL: string = "";
@@ -30,7 +17,7 @@ const HUD_ENABLED    = true;
 const HUD_OFFSET     = [0.30, 0.16, 1.0];
 const HUD_FONT       = 22;
 const UI_SCALE       = 0.00042;
-const MENU_SIZE      = 74;        // % of UI_SCALE (Settings > Menu Size %)
+const MENU_SIZE      = 74;
 const WRIST_MENU     = true;
 const WRIST_OFFSET   = [0.12, 0.04, 0.02];
 const ROUNDING       = 6;
@@ -48,7 +35,7 @@ const CLASSIC_TITLE  = false;
 const MENU_KEYBOARD  = true;
 const PIXEL_FONT     = true;
 const TAB_ROUNDING   = 9;
-const TITLE_FPS      = false;      // FPS line under the title
+const TITLE_FPS      = false;
 const FONT_PREFERENCE = ["RobotoMono-Medium", "RobotoMono-Regular", "CourierPrime", "LiberationMono", "consola", "LiberationSans", "Roboto-Regular"];
 
 const EXTRA_FRAME_HOOKS = ["HurricaneVR.Framework.Core.Player.HVRPlayerController",
@@ -105,7 +92,6 @@ const S = {
 const HANDS = ["Both", "Left", "Right"];
 const MODES = ["Normal", "Fast", "Chaos"];
 
-// Placeholder tabs: every control works (toggles, sliders, lists, buttons) but nothing is wired to a script.
 const PH = {
 	toggles: [ref(false), ref(false), ref(false), ref(false), ref(false), ref(false)],
 	speed: ref(1.0), amount: ref(1), mode: ref(0), hand: ref(0), item: ref(0), group: ref(false),
@@ -115,7 +101,7 @@ const PH_ITEMS = Array.from({ length: 24 }, (_, i) => "Placeholder Item " + (i +
 const PH_WARNING = ["This tab is a placeholder.", "Nothing in it is connected to a script, so it won't do anything in AC (Animal Company). The buttons, toggles and sliders still work - they just don't run any mods."];
 const phSeen = new Set<string>();
 const phClick = (ui: any, what: string) => ui.notify(what + " (placeholder - no script attached)");
-// Shows the warning until Continue is pressed (once per tab, per session). Returns true once past it.
+
 function placeholderGate(ui: any, tab: string): boolean {
 	if (phSeen.has(tab)) return true;
 	if (ui.notice("Placeholder", PH_WARNING, "Continue")) phSeen.add(tab);
@@ -123,18 +109,16 @@ function placeholderGate(ui: any, tab: string): boolean {
 }
 const DEMO_ITEMS = ["mod.frb", "config.json", "preset_a.frb", "preset_b.frb"];
 
-
-// ── Dear ImGui Demo (recreation of ImGui::ShowDemoWindow() from github.com/ocornut/imgui) ──
 const IMGUI_VERSION = "1.92.9", IMGUI_VERSION_NUM = 19290;
 const D = {
 	open: ref(true),
-	// Window options (all applied to the window)
+
 	noTitlebar: ref(false), noScrollbar: ref(false), noMenu: ref(false), noMove: ref(false), noResize: ref(false),
 	noCollapse: ref(false), noClose: ref(false), noNav: ref(false), noBackground: ref(false), noBringToFront: ref(false),
 	unsaved: ref(false),
-	// Configuration flags (mapped onto the menu's input features)
+
 	noMouse: ref(false), noMouseCursorChange: ref(false),
-	// Widgets
+
 	clicked: 0, check: ref(true), radio: ref(0), combo: ref(0), input: ref("Hello, world!"), sliderI: ref(0), sliderF: ref(0.123),
 	counter: 0, progress: 0, progressDir: 1, showHeader2: ref(true), fish: ref(0),
 	lastDraw: 0,
@@ -146,7 +130,7 @@ const DEMO_MENUS = [
 		"Auto-resizing window", "Simple overlay", "Custom rendering", "Documents"] },
 	{ label: "Tools", items: ["Metrics/Debugger", "Debug Log", "Style Editor", "Plugins", "Soundboard", "About Dear ImGui"] },
 ];
-// every example window, opened from the Examples menu
+
 const EX: { [name: string]: { v: boolean } } = {};
 for (const n of DEMO_MENUS[1].items) EX[n] = ref(false);
 
@@ -156,7 +140,6 @@ function onUpdate(): void {
 	if (D.progress <= -0.1) { D.progress = -0.1; D.progressDir = 1; }
 }
 
-// ── Menu > New / Open / Save / Save As.. : the demo's settings as JSON in the game's data folder ──
 function demoSnapshot(): any {
 	const out: any = {};
 	for (const k of Object.keys(D)) { const v = (D as any)[k]; if (v && typeof v === "object" && "v" in v) out[k] = v.v; }
@@ -418,7 +401,6 @@ function debugTab(ui: any) {
 	}
 }
 
-// ── Examples menu windows ──
 const EXS = {
 	mmText: ref("Edit me with the Edit menu"), mmClip: "", mmUndo: [] as string[], mmRedo: [] as string[],
 	console: [] as string[], consoleIn: ref(""), history: [] as string[],
@@ -592,7 +574,7 @@ const EX_DRAW: { [name: string]: (ui: any) => void } = {
 };
 
 function drawMenu(ui: any): void {
-	// a closed demo window comes back the next time the menu is opened
+
 	const now = Date.now();
 	if (!D.open.v && now - D.lastDraw > 500) D.open.v = true;
 	D.lastDraw = now;
@@ -792,8 +774,6 @@ Il2Cpp.perform(() => {
 	function persist(go: any) { if (ddolM && go) { try { ddolM.invoke(go); } catch (e) { errOnce("DontDestroyOnLoad", e); } } }
 	function destroy(o: any) { try { if (o && !o.isNull()) UEObject.method("Destroy", 1).invoke(o); } catch {} }
 
-	// Struct arguments are consumed by the call they're passed to, so a small ring of reusable
-	// 16-byte buffers replaces a native allocation (plus its JS finalizer) per Vector3/Quaternion/Color.
 	const vtRing: any[] = [];
 	let vtNext = 0;
 	function vt(klass: any, floats: number[]): any {
@@ -913,7 +893,7 @@ Il2Cpp.perform(() => {
 		try { appId = String(need(asmCore, "UnityEngine.Application").method("get_identifier").invoke().content); } catch { appId = "unknown app"; }
 	}
 	let appId = "";
-	// fallback Unity font (used for the HUD, and for menu text if the pixel font can't be drawn)
+
 	function selectFont(i: number) {
 		const f = loadedFonts[i];
 		if (!f) return;
@@ -1369,9 +1349,6 @@ Il2Cpp.perform(() => {
 	const ALL_CORNERS = 15, TOP_CORNERS = 3, BOTTOM_CORNERS = 12;
 	const winRadius = () => style.rounding * 2;
 
-	// two-arm archimedean spiral: thin anti-aliased lines with a faint glow, dimmer toward the edges.
-	// Built a few rows per frame (patternStep) so loading never stalls the game. With two arms the
-	// pattern is symmetric under a half turn, so each computed row also fills its mirror row.
 	const PAT_N = 768, PAT_ARMS = 2, PAT_LINES = 34;
 	let patternBytes: Uint8Array | null = null, patRow = 0;
 	function patternStep(budgetMs: number): boolean {
@@ -1416,7 +1393,6 @@ Il2Cpp.perform(() => {
 		}
 	}
 
-	// down-pointing triangle (rotated for right-pointing), ImGui-style arrow; row 0 is the bottom of the texture
 	const triBytes = new Uint8Array(CIRC_N * CIRC_N * 4);
 	{
 		const SS = 4, top = 0.2, apex = 0.84, half = 0.42;
@@ -1432,9 +1408,6 @@ Il2Cpp.perform(() => {
 		}
 	}
 
-	// ProggyClean (Dear ImGui's default font) as a 1-bit glyph atlas: ASCII 32..126, 16 per row, 8x16 cells,
-	// each glyph 7 px wide and 14 px tall (baseline at 10). The menu draws text itself from this, so it never
-	// depends on the game being able to load a font.
 	const GLYPH_TEX = 128, GLYPH_ADV = 7, GLYPH_H = 14, GLYPH_EM = 16;
 	const GLYPH_ATLAS = "AAAAAAAAAAAAAAAAAAAAAAAAFAAAAAAIEAQAAAAAACAACBQoCCIMCAgIAAAAAAAgAAgUKDwVEggICAAAAAAAEAAIAH4KFRIABBAICAAAABAACAAUCgpMAAQQKggAAAAIAAgAFBwoUgAEEBw+AD4ACAAIAD8oVCIABBAqCAAAAAQAAAAKKFQiAAQQCAgEAAQEAAgACh4iXAAICAAABAAEAgAAAAAIAAAACAgAAAQAAAIAAAAAAAAAABAEAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHAgcHCA+GD4cHAAAAAAAHCIMIiIwAgQgIiIAAAAAACIiCiAgKAICECIiCAQwAAYgKggQGCQeHhAcIggEDH4YECoICCAiICIIIjwAAAMAYAgiCAQgfiAiCCIgAAAMfhgIIggCIiAiIgQiEAgEMAAGABw+PhwgHBwEHAwIBAAAAAgAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABwYHjgePj44QhwcQgJjRhgiGCJEIgICREIIECICY0YkWSQiAkICAgJCCBASAlVKQlUkPgJCHh4CfggQCgJVSkJVPEICQgICckIIEA4CSVJCOUJCAkICAkJCCBASAklSQgJCQkQiAgJEQggQIgJBYiQ8Qj44Hj4COEIcDkI+QWIYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHAIcCAAeGB48f0JBQUJBfgQCEAgAIiQiQghCQUlCQUAEBBAUACJCIgIIQiJJJCIgBAQQFAAiQiIMCEIiVRgUEAQIECIAHkIeMAhCFFUYCAgECBAiAAJCEkAIQhQ2JAgEBBAQAAACJCJCCEIIIkIIAgQQEAAAAlhCPAg8CCJCCH4EIBAAAABAAAAAAAAAAAAABCAQAH8AAAAAAAAAAAAAABwAHAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAIAIAA4AAIIEAIMAAAACAACACAABAACAAACCAAAAAAAAgAgAAQAAgAAAggAAAAAHB4cPBwePB4MGCIINx4cACAiIiIiBCIiCBASCEkiIgA8IgIiPgQiIggQCghJIiIAIiICIgIEIiIIEA4ISSIiACIiIiIiBCIiCBASCEkiIgA8Hhw8HAQ8IggQIghJIhwAAAAAAAAAIAAAEAAAAAAAAAAAAAAAACAAAA4AAAAAAAAAAAAAAAAcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwCAYAAAAAAAAEAAAAAAAACAgIAAAAAAAABAAAAAAAAAgICAAAHjwaPDwiIkEiIj4ICAgAACIiJgIEIiJJFCIgCAgITgAiIgIMBCIUSQgiEAYIMDkAIiICEAQiFFUIIggICAgAACIiAiAEIgg2FCIECAgIAAAePAIeODwIIiI8PggICAAAAiAAAAAAAAAAIAAICAgAAAIgAAAAAAAAACAAMAgGAAACIAAAAAAAAAAcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 	function glyphAtlasBytes(): Uint8Array {
@@ -1457,7 +1430,7 @@ Il2Cpp.perform(() => {
 		return out;
 	}
 	const plainText = (s: string) => s.replace(/<\/?(color|b|i|size)[^>]*>/g, "");
-	// quads for one line of text in glyph pixels: x from 0 to 7*n, y centred on 0 (+7 top, -7 bottom)
+
 	function glyphQuads(s: string): { verts: number[]; uvs: number[]; tris: number[] } {
 		const verts: number[] = [], uvs: number[] = [], tris: number[] = [];
 		let x = 0;
@@ -1519,7 +1492,7 @@ Il2Cpp.perform(() => {
 		side?: boolean; sideX?: number; sideY?: number; sideW?: number; topY?: number; textSum?: number;
 		widths?: number[]; ids?: string[]; scrolling?: boolean; first?: number; last?: number; pad?: number; stripW?: number; area?: boolean } | null = null;
 	const tabTextSum = new Map<string, number>();
-	// horizontal tab scrolling: last frame's tab text widths + ids, the first visible tab, and thumbstick carry-over
+
 	const tabWidths = new Map<string, number[]>(), tabIds = new Map<string, string[]>(), tabFirst = new Map<string, number>();
 	let tabStickAcc = 0;
 	const TAB_MIN_PAD = 12;
@@ -1611,7 +1584,7 @@ Il2Cpp.perform(() => {
 		w.placed = true; w.poseDirty = true;
 		return true;
 	}
-	// a window with `follow` (the keyboard) hangs just below the window it follows, facing the same way
+
 	function followWin(w: Win): boolean {
 		const m = w.follow ? wins.get(w.follow) : null;
 		if (!m || !m.placed) return false;
@@ -1799,7 +1772,7 @@ Il2Cpp.perform(() => {
 		line(x + s * 0.2, y + s * 0.52, x + s * 0.42, y + s * 0.74, t, c, L_FILL);
 		line(x + s * 0.42, y + s * 0.74, x + s * 0.82, y + s * 0.26, t, c, L_FILL);
 	}
-	// dir 0 = pointing down, 1 = pointing right, 2 = pointing left
+
 	function arrow(x: number, y: number, s: number, dir: number, c: number[], l: number = L_FILL) {
 		if (rectMode === "mesh" && roundOK && triTex && quadMesh) { R(x, y, s, s, c, l, dir === 1 ? -90 : dir === 2 ? 90 : 0, 0, ALL_CORNERS, TEX_TRI); return; }
 		const n = 5, step = s * 0.64 / n;
@@ -2186,10 +2159,9 @@ Il2Cpp.perform(() => {
 		T(x, y, fw, fh, overlay ?? Math.round(clamp01(frac) * 100) + "%", C.Text, ALIGN_CENTER, L_FRAME);
 	}
 
-	// ---- text entry: fields focus the on-screen keyboard window, which types into them ----
 	let kb: { id: string; get: () => string; set: (v: string) => void; alive?: () => boolean } | null = null;
 	let kbShift = false;
-	// runtime switches a menu can drive (the demo's Configuration flags use these)
+
 	const rt = { keyboard: ref(true), stickScroll: ref(true), cursor: ref(true) };
 	function kbFocus(id: string, get: () => string, set: (v: string) => void, alive?: () => boolean) {
 		if (!rt.keyboard.v) { notify("On-screen keyboard is switched off"); return; }
@@ -2228,7 +2200,7 @@ Il2Cpp.perform(() => {
 		}
 		return out;
 	}
-	// framed message box: title, word-wrapped lines, one button; returns true when the button is clicked
+
 	function notice(title: string, lines: string[], buttonLabel: string = "OK"): boolean {
 		const [, id] = labelId(title + "##notice");
 		const fw = fullW(), pad = 16, lh = lineH();
@@ -2254,7 +2226,6 @@ Il2Cpp.perform(() => {
 		return b.clicked;
 	}
 
-	// list box with a search field on top and a letter column on the left (click a letter to jump)
 	function listBox(label: string, r: { v: number }, items: string[], rows: number = 8): boolean {
 		const [disp, id] = labelId(label);
 		const cs = comboState(id);
@@ -2379,8 +2350,7 @@ Il2Cpp.perform(() => {
 		}
 		return true;
 	}
-	// When the tabs can't all fit (even with tight padding) the strip shows a run of whole tabs that fits,
-	// plus < > buttons on the right; pointing at the strip and pushing the thumbstick also scrolls it.
+
 	function layoutTabs(win: Win, selChanged: boolean) {
 		const b = bar!;
 		b.widths = []; b.ids = []; b.scrolling = false;
@@ -2397,11 +2367,11 @@ Il2Cpp.perform(() => {
 			while (tabStickAcc < -60) { first = Math.max(0, first - 1); tabStickAcc += 60; }
 		} else if (!overStrip) tabStickAcc = 0;
 		const lastFrom = (f: number) => { let used = 0, l = f - 1; while (l + 1 < n && used + tw(l + 1) <= avail) { used += tw(l + 1); l++; } return Math.max(f, l); };
-		// bring the selected tab into view when the selection changes (or the first time), not while browsing
+
 		const selIdx = selChanged || !tabFirst.has(b.id) ? ids.indexOf(tabSel.get(b.id) ?? "") : -1;
 		if (selIdx >= 0 && selIdx < first) first = selIdx;
 		while (selIdx >= 0 && selIdx > lastFrom(first) && first < selIdx) first++;
-		// never leave a gap at the right end
+
 		while (first > 0 && lastFrom(first - 1) === n - 1) first--;
 		const last = lastFrom(first);
 		let used = 0;
@@ -2429,7 +2399,7 @@ Il2Cpp.perform(() => {
 			RR(x, y, w, th, sel ? C.TabActive : b.hov ? C.TabHovered : C.Tab, L_FRAME, sel ? undefined : undefined);
 			T(x + 10, y, w - 12, th, disp, sel ? C.TextOnActive : C.Text, ALIGN_LEFT, L_FRAME);
 		} else {
-			// ImGui "resize down" fitting: tabs hug their text, padding shrinks when they would overflow the bar
+
 			const n = tabCount.get(bar.id) ?? 0, gap = 0, txw = textW(disp), sum = tabTextSum.get(bar.id);
 			const idx = bar.n;
 			bar.n++;
@@ -2443,7 +2413,7 @@ Il2Cpp.perform(() => {
 			const tw = style.tabsFill && n > 0 && !bar.scrolling ? (fullW() - gap * (n - 1)) / n : txw + padX * 2;
 			const x = bar.nx;
 			bar.nx += tw + gap;
-			// one connected strip: only its outer ends are rounded (left end on the first shown tab, right end on the last)
+
 			const firstShown = bar.scrolling ? bar.first! : 0, lastShown = bar.scrolling ? bar.last! : n - 1;
 			const ends = (idx === firstShown ? 1 | 8 : 0) | (n > 0 && idx === lastShown ? 2 | 4 : 0);
 			const b = behavior(tid, x, bar.y, tw, bar.h);
@@ -2466,8 +2436,7 @@ Il2Cpp.perform(() => {
 		btn(0, 2, first > 0, -1);
 		btn(1, 1, last < n - 1, 1);
 	}
-	// A scrolling region with no tabs: everything until endScrollArea() is clipped to `height`
-	// and scrolls with the thumbstick, by dragging, or with the scrollbar.
+
 	function beginScrollArea(id: string, height: number = style.pageH): boolean {
 		const win = cur!;
 		bar = { id: win.title + "/" + id, y: win.cy, nx: style.pad + win.indent, h: 0, n: 0, contentY: win.cy, pageH: Infinity, area: true };
@@ -2481,7 +2450,6 @@ Il2Cpp.perform(() => {
 	}
 	function endScrollArea() { endTabBar(); }
 
-	// Dear ImGui-style menu bar under the title: returns { menu, item } for the item clicked this frame
 	function menuBar(menus: { label: string; items: string[] }[]): { menu: number; item: number } | null {
 		const win = cur!;
 		const h = lineH() + 4, y = win.cy - style.pad;
@@ -2548,7 +2516,7 @@ Il2Cpp.perform(() => {
 		R(x, y, w, 1, C.Border, L_MODAL); R(x, y + h - 1, w, 1, C.Border, L_MODAL); R(x, y, 1, h, C.Border, L_MODAL); R(x + w - 1, y, 1, h, C.Border, L_MODAL);
 		for (let i = 0; i < lines.length; i++) T(x + 10, y + 6 + i * lh, w - 20, lh, lines[i], C.Text, ALIGN_LEFT, L_MODAL);
 	}
-	// "(?)" after the previous widget; hovering it shows desc
+
 	function helpMarker(desc: string) {
 		sameLine();
 		const s2 = "(?)", w = textW(s2), h = lineH();
@@ -2572,7 +2540,7 @@ Il2Cpp.perform(() => {
 		R(x, y, fw, 1, strong, L_FRAME); R(x, y + th - 1, fw, 1, strong, L_FRAME);
 		for (let c = 0; c <= n; c++) R(Math.min(x + c * cw, x + fw - 1), y, 1, th, c === 0 || c === n ? strong : (C.TableBorderLight ?? C.Separator), L_FRAME);
 	}
-	// reserve a w x h area and draw into it with coordinates relative to its top-left corner
+
 	function canvas(h: number, w: number = fullW()) {
 		const [x, y] = item(w, h);
 		return {
@@ -2671,15 +2639,13 @@ Il2Cpp.perform(() => {
 		hudContentAt = 0;
 	}
 
-	// Parent the HUD root to the head once; after that it costs nothing per frame. Falls back to
-	// following the head from JS if parenting fails. Re-parents when the head changes (new scene).
 	let hudHead: any = null, hudRoot: any = null, hudHeadFailed = false, hudScale = 0, hudHeadScale = 1;
 	function hudOnHead(head: any): boolean {
 		if (hudHeadFailed || !hudWin.rootT || !alive(hudWin.root)) return false;
 		try {
 			if (hudHead !== head || hudRoot !== hudWin.root) {
 				hudWin.rootT.method("SetParent", 2).invoke(head, false);
-				// scaled player rigs (common in gorilla-locomotion games) would scale the HUD too - undo that
+
 				const ls = get3(head, "get_lossyScale");
 				hudHeadScale = ls && ls[0] > 1e-4 ? ls[0] : 1;
 				call(hudWin.rootT, "set_localPosition", v3(HUD_OFFSET[0] / hudHeadScale, HUD_OFFSET[1] / hudHeadScale, HUD_OFFSET[2] / hudHeadScale));
@@ -3017,7 +2983,7 @@ Il2Cpp.perform(() => {
 	function drawTextProp(pl: Plugin, d: PropDef, r: any) {
 		const hasList = !!(d.values && d.values.length);
 		if (!hasList) {
-			// free text: typed on the in-menu keyboard (plugins.set(...) from the REPL still works too)
+
 			const tr = { get v(): string { return String(r.strv ?? d.default ?? ""); }, set v(s: string) { r.strv = s; } };
 			inputText((d.label ?? d.key!) + "###prop:" + pl.name + ":" + d.key, tr);
 			if (d.desc) { sameLine(); text(d.desc, C.TextDisabled); }
@@ -3092,7 +3058,7 @@ Il2Cpp.perform(() => {
 	const setFont = ref(0), setOpacity = ref(1), setTheme = ref(Math.max(0, THEME_NAMES.indexOf(THEME)));
 	const setLayout = ref(ROW_LAYOUT ? 0 : 1), setPattern = ref(WINDOW_PATTERN), setHud = ref(HUD_ENABLED);
 	function applySize() { setMenuScale(UI_SCALE * setSize.v / 100); style.width = setWidth.v; }
-	// Settings persist per menu (file name from the menu title) in the game's data folder
+
 	const settingsPath = () => pluginDir ? pluginDir.replace(/\/imgui_plugins$/, "") + "/imgui_settings_" + MENU_TITLE.replace(/[^A-Za-z0-9]+/g, "_") + ".json" : "";
 	function saveSettings(): boolean {
 		const path = settingsPath();
@@ -3131,7 +3097,7 @@ Il2Cpp.perform(() => {
 		log("settings loaded from " + path);
 	}
 	function settings() {
-		// Size and width only apply on Save: resizing while dragging moved the slider out from under the pointer
+
 		sliderInt("Menu Size %", setSize, 40, 300);
 		sliderInt("Menu Width", setWidth, 600, 1400);
 		const sizePending = setSize.v !== Math.round(style.scale / UI_SCALE * 100) || setWidth.v !== style.width;
@@ -3854,11 +3820,7 @@ Il2Cpp.perform(() => {
 	}
 
 	let dbgAsmList: string[] | null = null, dbgClassCount = -1;
-	// ══ SOUNDBOARD ══════════════════════════════════════════════════════════════
-	// Plays .mp3 / .ogg / .wav files from <game data>/files/imgui_sounds through the menu's own 2D
-	// AudioSource, so you hear them wherever you are (local only - it doesn't go into voice chat).
-	// Compressed files load through Unity's UnityWebRequest audio loader (the game decodes them);
-	// if a game stripped that loader, .wav still works via a small decoder here. Clips are cached.
+
 	let soundDir = "";
 	const SB = { files: [] as string[], sel: ref(0), volume: ref(1.0), loop: ref(false), scanned: false,
 		status: "", playing: "", mkdir: false, mic: ref(false), hearSelf: ref(true) };
@@ -3872,10 +3834,6 @@ Il2Cpp.perform(() => {
 	const DHAudioCls = findClassAnywhere("UnityEngine.Networking.DownloadHandlerAudioClip");
 	const AUDIO_TYPE: { [ext: string]: number } = { mp3: 13, ogg: 14, wav: 20 };
 
-	// ── Mic mode: Photon Voice's Recorder can take an AudioClip as its source instead of the
-	// microphone, so the sound goes out over voice chat. Games on other voice systems (Vivox,
-	// Normcore, custom) don't have this and mic mode says so. Your real mic comes back when the
-	// sound ends, on Stop, or when mic mode is switched off.
 	const RecorderCls = findClassAnywhere("Photon.Voice.Unity.Recorder");
 	const mic = { recs: [] as any[], at: 0, live: false, until: 0, vad: new Map<any, any>() };
 	function micRecorders(): any[] {
@@ -3893,10 +3851,10 @@ Il2Cpp.perform(() => {
 		const recs = micRecorders();
 		for (const r of recs) {
 			if (!mic.vad.has(r)) mic.vad.set(r, call(r, "get_VoiceDetection"));
-			call(r, "set_SourceType", 1);                 // 1 = AudioClip
+			call(r, "set_SourceType", 1);
 			call(r, "set_AudioClip", clip);
 			call(r, "set_LoopAudioClip", SB.loop.v);
-			call(r, "set_VoiceDetection", false);         // don't gate quiet parts of the sound
+			call(r, "set_VoiceDetection", false);
 			call(r, "set_TransmitEnabled", true);
 			call(r, "set_RecordingEnabled", true);
 			micRestart(r);
@@ -3910,7 +3868,7 @@ Il2Cpp.perform(() => {
 		mic.live = false; mic.until = 0;
 		for (const r of mic.recs) {
 			if (!alive(r)) continue;
-			call(r, "set_SourceType", 0);                 // 0 = Microphone
+			call(r, "set_SourceType", 0);
 			call(r, "set_AudioClip", null);
 			call(r, "set_LoopAudioClip", false);
 			const vad = mic.vad.get(r);
@@ -3939,7 +3897,7 @@ Il2Cpp.perform(() => {
 			if (!src) return null;
 			sbSrc = keep(src);
 			call(sbSrc, "set_playOnAwake", false);
-			call(sbSrc, "set_spatialBlend", 0);     // 2D: same volume wherever you stand
+			call(sbSrc, "set_spatialBlend", 0);
 			call(sbSrc, "set_priority", 0);
 			return sbSrc;
 		} catch (e) { errOnce("soundboard source", e); return null; }
@@ -3979,7 +3937,7 @@ Il2Cpp.perform(() => {
 		if (ext === "wav") { const clip = sbLoadWav(file, path); if (clip) { sbClips.set(file, clip); sbPlayClip(file, clip); } return; }
 		SB.status = "this game has no audio file loader for ." + ext + " - use .wav files";
 	}
-	// UnityWebRequestMultimedia.GetAudioClip(url, type) when available, else the constructors directly
+
 	function sbLoadWeb(file: string, path: string, type: number): boolean {
 		if (!UWRCls || !DHAudioCls) return false;
 		const url = Il2Cpp.string("file://" + path);
@@ -4001,7 +3959,7 @@ Il2Cpp.perform(() => {
 		SB.status = "loading " + file + "...";
 		return true;
 	}
-	// runs every frame, only while a load is in flight
+
 	function sbPoll() {
 		const p = sbPending;
 		if (!p) return;
@@ -4014,7 +3972,7 @@ Il2Cpp.perform(() => {
 		if (!clip || clip.isNull()) { try { err = String(p.req.method("get_error", 0).invoke().content ?? ""); } catch {} }
 		try { p.req.method("Dispose", 0).invoke(); } catch {}
 		if (clip && !clip.isNull()) {
-			try { clip.method("set_hideFlags", 1).invoke(61); } catch {}   // keep it through scene changes
+			try { clip.method("set_hideFlags", 1).invoke(61); } catch {}
 			sbClips.set(p.file, keep(clip));
 			sbPlayClip(p.file, clip);
 		} else {
@@ -4023,7 +3981,7 @@ Il2Cpp.perform(() => {
 			log("soundboard: " + SB.status);
 		}
 	}
-	// 8/16/24-bit PCM and 32-bit float .wav -> AudioClip.Create + SetData
+
 	function sbLoadWav(file: string, path: string): any {
 		if (!AudioClipCls) { SB.status = "AudioClip missing"; return null; }
 		try {
@@ -4166,8 +4124,7 @@ Il2Cpp.perform(() => {
 		if (rightT) return "ray";
 		return "gaze";
 	}
-	// Until you've clicked once every input source is polled (about 20 game calls a frame with the
-	// menu open); after that only the source(s) that actually produced a click are.
+
 	const clickSrc = new Set<string>();
 	const clickFrom = (src: string) => { if (!clickSrc.has(src)) { clickSrc.add(src); log("click input: " + src); } return true; };
 	function anyClick(): boolean {
@@ -4364,10 +4321,6 @@ Il2Cpp.perform(() => {
 		return true;
 	}
 
-	// Frame drivers. All are Interceptor.attach listeners (the game's own code runs untouched; the old
-	// method.implementation replacement pushed every call through JS and back). Several are installed so
-	// one always fires, then after ~2 s only the steadiest is kept - each extra listener cost a JS entry
-	// plus a Time.frameCount call every frame, menu open or not. If the kept one goes quiet, all come back.
 	const driverHooks: { label: string; va: any; enter: boolean; pri: number; l: any; hits: number }[] = [];
 	const addDriver = (label: string, va: any, enter: boolean, pri: number) => {
 		if (!va || (typeof va.isNull === "function" && va.isNull())) return false;
@@ -4384,7 +4337,7 @@ Il2Cpp.perform(() => {
 	let canvasHooked = false;
 	try {
 		const swrc = Canvas.tryMethod ? Canvas.tryMethod("SendWillRenderCanvases", 0) : Canvas.method("SendWillRenderCanvases", 0);
-		// lowest priority: it only fires while some canvas renders, and the menu's own canvases are off when closed
+
 		canvasHooked = !!swrc && addDriver("Canvas.SendWillRenderCanvases", swrc.virtualAddress, true, 0);
 	} catch (e) { log("canvas frame hook unavailable: " + e); }
 	const ovrUpdate = OVRRigCls ? hookMethodOf(OVRRigCls) : null;
@@ -4403,7 +4356,7 @@ Il2Cpp.perform(() => {
 		const live = driverHooks.filter(d => d.l && d.hits > 20);
 		if (live.length < 2) return;
 		const maxHits = Math.max(...live.map(d => d.hits));
-		// steady = fired on most frames; among those prefer the rig / Update hooks over the canvas one
+
 		const keep = live.filter(d => d.hits >= maxHits * 0.8).sort((a, b) => b.pri - a.pri)[0];
 		for (const d of driverHooks) if (d !== keep && d.l) { try { d.l.detach(); } catch {} d.l = null; }
 		multiDriver = false; driverKept = keep.label;

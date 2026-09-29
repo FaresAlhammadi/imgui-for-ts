@@ -196,13 +196,7 @@ function drawMenu(ui: any): void {
 			}
 		}
 
-		if (ui.tabItem("Soundboard")) {
-			ui.text("Sounds folder: " + ui.pluginDir());
-			ui.separator();
-			for (const name of DEMO_ITEMS) {
-				if (ui.button("Play  " + name)) ui.notify("demo: play " + name);
-			}
-		}
+		if (ui.tabItem("Soundboard")) ui.soundboardTab();
 
 		if (ui.tabItem("Debug")) ui.debugTab();
 
@@ -2342,7 +2336,8 @@ Il2Cpp.perform(() => {
 	}
 	const c_opendir = libc("opendir", "pointer", ["pointer"]), c_readdir = libc("readdir", "pointer", ["pointer"]);
 	const c_closedir = libc("closedir", "int", ["pointer"]), c_mkdir = libc("mkdir", "int", ["pointer", "int"]);
-	function listJs(dir: string): string[] | null {
+	function listJs(dir: string): string[] | null { return listFiles(dir, /\.js$/i); }
+	function listFiles(dir: string, re: RegExp): string[] | null {
 		if (!c_opendir || !c_readdir) return null;
 		const d = c_opendir(Memory.allocUtf8String(dir));
 		if (d.isNull()) return null;
@@ -2352,7 +2347,7 @@ Il2Cpp.perform(() => {
 				const ent = c_readdir(d);
 				if (ent.isNull()) break;
 				const type = ent.add(18).readU8(), name = ent.add(19).readUtf8String() ?? "";
-				if ((type === 8 || type === 0) && /\.js$/i.test(name)) out.push(name);
+				if ((type === 8 || type === 0) && re.test(name)) out.push(name);
 			}
 		} finally { if (c_closedir) c_closedir(d); }
 		return out.sort();
@@ -2507,7 +2502,7 @@ Il2Cpp.perform(() => {
 			let base = "";
 			try { base = String(need(asmCore, "UnityEngine.Application").method("get_persistentDataPath", 0).invoke().content); } catch {}
 			if (!base && appId) base = "/sdcard/Android/data/" + appId + "/files";
-			if (base) { pluginDir = base + "/imgui_plugins"; requestScan(); }
+			if (base) { pluginDir = base + "/imgui_plugins"; soundDir = base + "/imgui_sounds"; requestScan(); }
 		}
 		for (const pl of pluginList) {
 			if (!pl.frame || pl.enabled === false) continue;
@@ -3367,6 +3362,166 @@ Il2Cpp.perform(() => {
 	}
 
 	let dbgAsmList: string[] | null = null, dbgClassCount = -1;
+	// ══ SOUNDBOARD ══════════════════════════════════════════════════════════════
+	// Plays .mp3 / .ogg / .wav files from <game data>/files/imgui_sounds through the menu's own 2D
+	// AudioSource, so you hear them wherever you are (local only - it doesn't go into voice chat).
+	// Compressed files load through Unity's UnityWebRequest audio loader (the game decodes them);
+	// if a game stripped that loader, .wav still works via a small decoder here. Clips are cached.
+	let soundDir = "";
+	const SB = { files: [] as string[], sel: ref(0), volume: ref(1.0), loop: ref(false), scanned: false,
+		status: "", playing: "", mkdir: false };
+	const sbClips = new Map<string, any>();
+	let sbPending: { file: string; req: any; dh: any; started: number } | null = null;
+	let sbSrc: any = null, sbGo: any = null;
+	const AudioSourceCls = findClassAnywhere("UnityEngine.AudioSource");
+	const AudioClipCls = findClassAnywhere("UnityEngine.AudioClip");
+	const UWRCls = findClassAnywhere("UnityEngine.Networking.UnityWebRequest");
+	const UWRMediaCls = findClassAnywhere("UnityEngine.Networking.UnityWebRequestMultimedia");
+	const DHAudioCls = findClassAnywhere("UnityEngine.Networking.DownloadHandlerAudioClip");
+	const AUDIO_TYPE: { [ext: string]: number } = { mp3: 13, ogg: 14, wav: 20 };
+
+	function sbScan() {
+		SB.scanned = true;
+		if (!soundDir) { SB.status = "resolving the game's data folder..."; SB.scanned = false; return; }
+		if (!SB.mkdir && c_mkdir) { SB.mkdir = true; try { c_mkdir(Memory.allocUtf8String(soundDir), 0o771); } catch {} }
+		const files = listFiles(soundDir, /\.(mp3|ogg|wav)$/i);
+		SB.files = files ?? [];
+		SB.sel.v = Math.min(SB.sel.v, Math.max(0, SB.files.length - 1));
+		SB.status = files === null ? "can't read " + soundDir : SB.files.length + " sound" + (SB.files.length === 1 ? "" : "s");
+	}
+	function sbSource(): any {
+		if (sbSrc && alive(sbSrc)) return sbSrc;
+		sbSrc = null;
+		if (!AudioSourceCls) return null;
+		try {
+			if (!sbGo || !alive(sbGo)) { sbGo = newGO("imgui_soundboard"); persist(sbGo); }
+			const src = addComp(sbGo, AudioSourceCls);
+			if (!src) return null;
+			sbSrc = keep(src);
+			call(sbSrc, "set_playOnAwake", false);
+			call(sbSrc, "set_spatialBlend", 0);     // 2D: same volume wherever you stand
+			call(sbSrc, "set_priority", 0);
+			return sbSrc;
+		} catch (e) { errOnce("soundboard source", e); return null; }
+	}
+	function sbPlayClip(file: string, clip: any) {
+		const src = sbSource();
+		if (!src) { SB.status = "no AudioSource in this game"; return; }
+		call(src, "Stop");
+		call(src, "set_clip", clip);
+		call(src, "set_volume", SB.volume.v);
+		call(src, "set_loop", SB.loop.v);
+		call(src, "Play");
+		SB.playing = file;
+		let len = 0;
+		try { len = Number(clip.method("get_length", 0).invoke()); } catch {}
+		SB.status = "playing " + file + (len > 0 ? " (" + len.toFixed(1) + "s)" : "");
+	}
+	function sbStop() {
+		if (sbSrc && alive(sbSrc)) call(sbSrc, "Stop");
+		sbPending = null; SB.playing = ""; SB.status = "stopped";
+	}
+	function sbPlay(file: string) {
+		const cached = sbClips.get(file);
+		if (cached && alive(cached)) { sbPlayClip(file, cached); return; }
+		sbClips.delete(file);
+		const ext = (file.split(".").pop() ?? "").toLowerCase(), path = soundDir + "/" + file;
+		if (sbLoadWeb(file, path, AUDIO_TYPE[ext] ?? 13)) return;
+		if (ext === "wav") { const clip = sbLoadWav(file, path); if (clip) { sbClips.set(file, clip); sbPlayClip(file, clip); } return; }
+		SB.status = "this game has no audio file loader for ." + ext + " - use .wav files";
+	}
+	// UnityWebRequestMultimedia.GetAudioClip(url, type) when available, else the constructors directly
+	function sbLoadWeb(file: string, path: string, type: number): boolean {
+		if (!UWRCls || !DHAudioCls) return false;
+		const url = Il2Cpp.string("file://" + path);
+		let req: any = null, dh: any = null;
+		try {
+			const get = UWRMediaCls ? UWRMediaCls.methods.find((m: any) => m.name === "GetAudioClip" && m.parameterCount === 2 && m.parameters[0].type.name === "System.String") : null;
+			if (get) { req = get.invoke(url, type); dh = req.method("get_downloadHandler", 0).invoke(); }
+		} catch (e) { errOnce("GetAudioClip", e); req = null; }
+		if (!req) try {
+			dh = DHAudioCls.alloc();
+			pickOverload(dh, DHAudioCls, ".ctor", 2, ps => ps[0].type.name === "System.String").invoke(url, type);
+			req = UWRCls.alloc();
+			pickOverload(req, UWRCls, ".ctor", 4, ps => ps[0].type.name === "System.String" && ps[1].type.name === "System.String")
+				.invoke(url, Il2Cpp.string("GET"), dh, null);
+		} catch (e) { errOnce("audio loader", e); return false; }
+		try { req.method("SendWebRequest", 0).invoke(); }
+		catch (e) { errOnce("SendWebRequest", e); return false; }
+		sbPending = { file, req: keep(req), dh: keep(dh), started: Date.now() };
+		SB.status = "loading " + file + "...";
+		return true;
+	}
+	// runs every frame, only while a load is in flight
+	function sbPoll() {
+		const p = sbPending;
+		if (!p) return;
+		let done = false;
+		try { done = !!p.req.method("get_isDone", 0).invoke(); } catch (e) { errOnce("soundboard poll", e); sbPending = null; return; }
+		if (!done) { if (Date.now() - p.started > 15000) { sbPending = null; SB.status = "loading " + p.file + " timed out"; } return; }
+		sbPending = null;
+		let clip: any = null, err = "";
+		try { clip = p.dh.method("get_audioClip", 0).invoke(); } catch {}
+		if (!clip || clip.isNull()) { try { err = String(p.req.method("get_error", 0).invoke().content ?? ""); } catch {} }
+		try { p.req.method("Dispose", 0).invoke(); } catch {}
+		if (clip && !clip.isNull()) {
+			try { clip.method("set_hideFlags", 1).invoke(61); } catch {}   // keep it through scene changes
+			sbClips.set(p.file, keep(clip));
+			sbPlayClip(p.file, clip);
+		} else {
+			if (/\.wav$/i.test(p.file)) { const c = sbLoadWav(p.file, soundDir + "/" + p.file); if (c) { sbClips.set(p.file, c); sbPlayClip(p.file, c); return; } }
+			SB.status = "couldn't load " + p.file + (err ? " (" + err + ")" : "");
+			log("soundboard: " + SB.status);
+		}
+	}
+	// 8/16/24-bit PCM and 32-bit float .wav -> AudioClip.Create + SetData
+	function sbLoadWav(file: string, path: string): any {
+		if (!AudioClipCls) { SB.status = "AudioClip missing"; return null; }
+		try {
+			const buf: ArrayBuffer = (File as any).readAllBytes(path);
+			const raw = new Uint8Array(buf), dv = new DataView(buf);
+			const tag = (o: number) => String.fromCharCode(raw[o], raw[o + 1], raw[o + 2], raw[o + 3]);
+			if (raw.length < 44 || tag(0) !== "RIFF" || tag(8) !== "WAVE") { SB.status = file + " isn't a wav"; return null; }
+			let ch = 1, rate = 44100, bits = 16, fmt = 1, off = -1, size = 0;
+			for (let pos = 12; pos + 8 <= raw.length;) {
+				const id = tag(pos), sz = dv.getUint32(pos + 4, true);
+				if (id === "fmt ") { fmt = dv.getUint16(pos + 8, true); ch = Math.max(1, dv.getUint16(pos + 10, true)); rate = dv.getUint32(pos + 12, true); bits = dv.getUint16(pos + 22, true); if (fmt === 0xfffe) fmt = bits === 32 ? 3 : 1; }
+				else if (id === "data") { off = pos + 8; size = Math.min(sz, raw.length - off); break; }
+				pos += 8 + sz + (sz & 1);
+			}
+			if (off < 0 || (fmt !== 1 && fmt !== 3)) { SB.status = file + ": unsupported wav encoding"; return null; }
+			const bps = bits / 8, frames = Math.floor(size / (bps * ch)), n = frames * ch, out = new Float32Array(n);
+			for (let i = 0, o = off; i < n; i++, o += bps) {
+				out[i] = fmt === 3 ? dv.getFloat32(o, true)
+					: bits === 8 ? (raw[o] - 128) / 128
+					: bits === 16 ? dv.getInt16(o, true) / 32768
+					: bits === 24 ? ((raw[o] | (raw[o + 1] << 8) | (raw[o + 2] << 16)) << 8 >> 8) / 8388608
+					: dv.getInt32(o, true) / 2147483648;
+			}
+			const create = AudioClipCls.methods.find((m: any) => m.name === "Create" && m.parameterCount === 5);
+			const clip = create.invoke(Il2Cpp.string("sb_" + file), frames, ch, rate, false);
+			clip.method("SetData", 2).invoke(rawArray(Il2Cpp.corlib.class("System.Single"), n, out.buffer as ArrayBuffer), 0);
+			try { clip.method("set_hideFlags", 1).invoke(61); } catch {}
+			return keep(clip);
+		} catch (e) { SB.status = "wav load failed: " + e; errOnce("wav", e); return null; }
+	}
+	function soundboardTab() {
+		if (!SB.scanned) sbScan();
+		text("Folder: " + (soundDir || "(resolving...)"), C.TextDisabled);
+		if (button("Refresh")) sbScan();
+		sameLine();
+		if (button("Stop")) sbStop();
+		sameLine();
+		if (button("Play Selected") && SB.files.length) sbPlay(SB.files[SB.sel.v]);
+		if (sliderFloat("Volume", SB.volume, 0, 1, 2) && sbSrc && alive(sbSrc)) call(sbSrc, "set_volume", SB.volume.v);
+		if (checkbox("Loop", SB.loop) && sbSrc && alive(sbSrc)) call(sbSrc, "set_loop", SB.loop.v);
+		if (SB.files.length) { if (listBox("##sounds", SB.sel, SB.files, 8)) sbPlay(SB.files[SB.sel.v]); }
+		else text("No sounds yet - copy .mp3 files into the folder above, then Refresh.", C.TextDisabled);
+		if (SB.status) text(SB.status, C.TextDisabled);
+		if (!AudioSourceCls) text("This game has no AudioSource class - the soundboard can't play here.", [1, 0.45, 0.5, 1]);
+	}
+	(globalThis as any).sb = { play: (f: string) => sbPlay(f), stop: sbStop, list: () => { sbScan(); return SB.files; }, dir: () => soundDir };
+
 	function debugTab() {
 		if (collapsingHeader("Runtime", true)) {
 			text("frame hook: " + driverSrc, C.TextDisabled);
@@ -3409,7 +3564,7 @@ Il2Cpp.perform(() => {
 		begin, end, text, textColored: (c: number[], s: string) => text(s, c), textDisabled: (s: string) => text(s, C.TextDisabled),
 		button, checkbox, sliderFloat, sliderInt, combo, collapsingHeader, separator, spacing, sameLine, indent, unindent,
 		progressBar, beginTabBar, tabItem, endTabBar, notice, ncsMods, treeNode, treePop, inputText, listBox, settings, info, notify, confirm, openUrl, style, ref,
-		pluginsTab, plugins: () => filePlugins(), pluginPage, debugTab, filePath, pluginDir: pluginDirStr,
+		pluginsTab, plugins: () => filePlugins(), pluginPage, debugTab, soundboardTab, filePath, pluginDir: pluginDirStr,
 		theme: (name: string) => applyTheme(name), themes: () => THEME_NAMES.slice(),
 		fonts: () => loadedFonts.map(f => f.name),
 		recenter: () => { for (const w of wins.values()) place(w); },
@@ -3503,6 +3658,7 @@ Il2Cpp.perform(() => {
 		if (!greeted) { greeted = true; notify(MENU_TITLE + " loaded"); }
 		try { onUpdate(); } catch (e) { errOnce("onUpdate", e); }
 		try { ncsTick(); } catch (e) { errOnce("NCS mods", e); }
+		if (sbPending) { try { sbPoll(); } catch (e) { errOnce("soundboard", e); sbPending = null; } }
 		try { pluginsFrame(); } catch (e) { errOnce("plugins", e); }
 
 		const now = Date.now(), dt = Math.min(0.1, Math.max(0.001, (now - lastTickMs) / 1000));

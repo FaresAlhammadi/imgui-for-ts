@@ -16,12 +16,12 @@ const DISCORD_URL    = "https://discord.gg/UxUGNmTKJG";
 const MENU_VERSION   = "v1.0";
 const MENU_HOLD_X    = true;
 const SHOW_LASER     = true;
-const THEME          = "Skire";
+const THEME          = "ImGuiDark";
 const ROW_LAYOUT     = false;
 const SIDEBAR_TABS   = false;
 const SIDEBAR_WIDTH  = 150;
 const WINDOW_WIDTH   = 1118;
-const WINDOW_PATTERN = true;
+const WINDOW_PATTERN = false;
 const SPIRAL_SPIN    = 30;
 const SPIRAL_CENTER  = 0.03;
 const HUD_ENABLED    = true;
@@ -42,11 +42,13 @@ const SHAPES         = "mesh";
 const SPAWN_DISTANCE = 0.45;
 const RAY_PITCH_DEG  = 0;
 const TRIG_THRESH    = 0.55;
-const CLASSIC_TITLE  = true;
+const CLASSIC_TITLE  = false;
 const MENU_KEYBOARD  = true;
 const PIXEL_FONT     = true;
 const TAB_ROUNDING   = 9;
-const TITLE_FPS      = true;      // FPS line under the title
+const TITLE_FPS      = false;     // FPS line under the title (the HUD shows FPS)
+const TITLE_DISCORD  = false;     // Discord button in the title bar
+const MENU_BAR       = true;      // Menu / Tools bar under the title
 const FONT_PREFERENCE = ["RobotoMono-Medium", "RobotoMono-Regular", "CourierPrime", "LiberationMono", "consola", "LiberationSans", "Roboto-Regular"];
 
 const EXTRA_FRAME_HOOKS = ["HurricaneVR.Framework.Core.Player.HVRPlayerController",
@@ -129,8 +131,25 @@ function onUpdate(): void {
 	}
 }
 
+const MAIN_MENUS = [
+	{ label: "Menu", items: ["Save Settings", "Recenter", "Test Notification", "Quit"] },
+	{ label: "Tools", items: ["Debug", "Plugins", "Soundboard", "Info", "Settings", "About"] },
+];
+function mainMenuBar(ui: any) {
+	const r = ui.menuBar(MAIN_MENUS);
+	if (!r) return;
+	const it = MAIN_MENUS[r.menu].items[r.item];
+	if (it === "Save Settings") ui.saveSettings();
+	else if (it === "Recenter") ui.recenter();
+	else if (it === "Test Notification") ui.notify("Test notification");
+	else if (it === "Quit") ui.close();
+	else if (it === "About") ui.confirm("About", [MENU_TITLE + " " + MENU_VERSION, "Dear ImGui style VR menu - pixel ProggyClean font.", "Skire - inspiration, Astraeus - coding."], "Close", () => {}, "OK");
+	else ui.selectTab("tabs", it);
+}
+
 function drawMenu(ui: any): void {
 	if (ui.begin(MENU_TITLE)) {
+		if (MENU_BAR) mainMenuBar(ui);
 		ui.beginTabBar("tabs");
 		if (ui.tabItem("NCS MODS")) ui.ncsMods();
 
@@ -730,7 +749,11 @@ Il2Cpp.perform(() => {
 	const hvrStickY = (): number => (hvrReady() && hvrRead(hvr.right, "JoystickAxis", "y")) || 0;
 
 	function updateRig() {
-		if (rig.head && !alive(rig.head)) rig.head = null;
+		if (rig.head && !alive(rig.head)) {
+			rig.head = null;
+			sceneQuietUntil = Date.now() + 1200;
+			log("scene change - menu paused for a moment");
+		}
 		if (rig.left && (!alive(rig.left) || !alive(rig.right))) rig.left = rig.right = null;
 		const now = Date.now();
 		if ((!rig.head || !rig.left) && now >= rig.nextScan) {
@@ -1449,7 +1472,7 @@ Il2Cpp.perform(() => {
 		}
 		const titleW = textW(title);
 		let discordW = 0;
-		if (w.order === 0 && DISCORD_URL && !classic) {
+		if (w.order === 0 && DISCORD_URL && TITLE_DISCORD && !classic) {
 			discordW = textW("Discord") + 22;
 			const dx = th + titleW + 12, dh = th - 8;
 			const db = behavior(title + "/##discord", dx, 4, discordW, dh);
@@ -3841,7 +3864,7 @@ Il2Cpp.perform(() => {
 	const ui = {
 		begin, end, text, textColored: (c: number[], s: string) => text(s, c), textDisabled: (s: string) => text(s, C.TextDisabled),
 		button, checkbox, sliderFloat, sliderInt, combo, collapsingHeader, separator, spacing, sameLine, indent, unindent,
-		canvas, selectTab, config: rt, laser: () => setLaser, onTop: () => setOnTop,
+		canvas, selectTab, config: rt, saveSettings: () => { applySize(); if (saveSettings()) notify("Settings saved"); }, laser: () => setLaser, onTop: () => setOnTop,
 		setOnTop: (on: boolean) => { setOnTop.v = on; style.onTop = on; },
 		logs: () => logLines, clearLogs: () => { logLines.length = 0; },
 		dataDir: () => (pluginDir ? pluginDir.replace(/\/imgui_plugins$/, "") : ""),
@@ -4057,7 +4080,11 @@ Il2Cpp.perform(() => {
 	const frameCountM = Time ? Time.tryMethod("get_frameCount", 0) : null;
 	let lastFrame = -1, lastTickAt = 0, ticks = 0;
 	let multiDriver = false;
+	let inTick = false, sceneQuietUntil = 0, tickErrs = 0, tickPauseUntil = 0, tickPauses = 0;
 	function tickOnce(src: string) {
+		if (inTick) return;
+		const nowT = Date.now();
+		if (nowT < tickPauseUntil || nowT < sceneQuietUntil) return;
 		let f = -1;
 		if (multiDriver && frameCountM) { try { f = frameCountM.invoke() as number; } catch {} }
 		if (f >= 0) { if (f === lastFrame) return; lastFrame = f; }
@@ -4066,7 +4093,17 @@ Il2Cpp.perform(() => {
 		if (driverSrc !== src) { driverSrc = src; log("frame hook: " + src); }
 		ticks++;
 		const t0p = Date.now();
-		try { tick(); } catch (e) { errOnce("tick", e); }
+		inTick = true;
+		try { tick(); tickErrs = 0; }
+		catch (e) {
+			errOnce("tick", e);
+			if (++tickErrs >= 5) {
+				tickErrs = 0; tickPauses++;
+				tickPauseUntil = Date.now() + Math.min(30000, 2000 * tickPauses);
+				log("frame keeps failing - pausing the menu " + Math.round((tickPauseUntil - Date.now()) / 1000) + "s (" + e + ")");
+			}
+		}
+		finally { inTick = false; }
 		perfStats.acc += Date.now() - t0p; perfStats.n++;
 		perfSample();
 	}
@@ -4171,7 +4208,7 @@ Il2Cpp.perform(() => {
 	function lateAnchor() {
 		const t0p = Date.now();
 		try {
-			if (!menuOpen || !style.wrist) return;
+			if (!menuOpen || !style.wrist || inTick || t0p < sceneQuietUntil || t0p < tickPauseUntil) return;
 			lateAt = Date.now();
 			for (const w of wins.values()) {
 				if (!isWrist(w) || !w.rootT || !w.rootOn) continue;

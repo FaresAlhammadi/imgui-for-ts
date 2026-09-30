@@ -1,5 +1,7 @@
 declare const Il2Cpp: any;
 
+declare const console: any;
+
 const MENU_TITLE     = "Dear ImGui Demo";
 const DISCORD_URL: string = "";
 const MENU_VERSION   = "";

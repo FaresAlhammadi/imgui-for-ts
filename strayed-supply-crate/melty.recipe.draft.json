@@ -1,28 +1,22 @@
 {
-  "_status": "DRAFT - not published. Not yet checked with Melty validate_recipe/one_click_check; the game slugs and the prelaunch step are unverified. Mod not yet run in game (People Playground Safe mode).",
+  "_status": "DRAFT - not published. Not yet checked with Melty validate_recipe/one_click_check; the game slugs are unverified. Ran in Gorilla Tag on the author's PC (crate + 4 items spawned).",
   "license": "MIT",
   "remix": true,
   "players": "solo",
   "games": [
-    { "slug": "pc-people-playground", "role": "primary" },
+    { "slug": "pc-gorilla-tag", "role": "primary" },
     { "slug": "pc-strayed", "role": "companion" }
   ],
   "components": [
-    { "name": "Strayed Supply Crate (People Playground mod)", "fileName": "StrayedSupplyCrate-mod-*.zip",
-      "install": { "to": "{game}/Mods/StrayedSupplyCrate" },
-      "contains": ["mod.json", "StrayedSupplyCrate.cs", "Sheets.g.cs", "thumb.png"],
-      "credit": "MIT" },
-    { "name": "Strayed Supply Baker", "fileName": "StrayedSupplyBaker-win-x64-*.zip",
-      "install": { "to": "{game}/Mods/StrayedSupplyCrate/.baker" },
-      "contains": ["StrayedSupplyBaker.exe", "StrayedSupply.Core.dll", "AssetsTools.NET.dll", "AssetsTools.NET.Texture.dll", "classdata.tpk", "items.json"],
+    { "name": "Strayed Supply Crate", "fileName": "StrayedSupplyCrate-*.zip",
+      "install": { "to": "{game}/BepInEx/plugins/StrayedSupplyCrate" },
+      "contains": ["StrayedSupplyCrate.dll", "StrayedSupply.Core.dll", "AssetsTools.NET.dll", "classdata.tpk", "LICENSE"],
       "credit": "MIT; includes AssetsTools.NET (MIT) and AssetRipper Tpk classdata.tpk (MIT)" }
   ],
+  "loader": "BepInEx 5 from Melty's Gorilla Tag loader configuration (not bundled)",
   "launch": {
     "kind": "game",
-    "prelaunch": {
-      "run": "{game}/Mods/StrayedSupplyCrate/.baker/StrayedSupplyBaker.exe",
-      "args": ["{game:pc-strayed}", "{game}/Mods/StrayedSupplyCrate/.baker/classdata.tpk", "{game}/Mods/StrayedSupplyCrate/.baker/items.json", "{game}/Mods/StrayedSupplyCrate/strayed"]
-    },
-    "notes": "People Playground Safe mode must be off for code mods; the player turns it off in Settings."
+    "env": { "STRAYED_SUPPLY_STRAYED_DIR": "{game:pc-strayed}" },
+    "notes": "Solo: the crate only appears offline or in a private room; it hides in public lobbies."
   }
 }

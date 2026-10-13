@@ -1,11 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>netstandard2.1</TargetFramework>
+    <!-- loaded by the Gorilla Tag plugin (Unity Mono) and by the .NET 8 tools/tests -->
     <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="AssetsTools.NET" Version="3.0.5" />
-    <PackageReference Include="AssetsTools.NET.Texture" Version="3.0.2" />
   </ItemGroup>
 </Project>

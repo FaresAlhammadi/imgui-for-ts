@@ -3,12 +3,19 @@ using System.Collections.Generic;
 using System.IO;
 using AssetsTools.NET;
 using AssetsTools.NET.Extra;
-using AssetsTools.NET.Texture;
 
 namespace StrayedSupply.Core
 {
     /// Reads Strayed's own meshes and textures straight out of the player's Strayed install.
-    /// Nothing is copied to disk: callers get decoded arrays in memory.
+    /// Nothing is copied to disk: callers get decoded meshes and GPU-ready texture data in memory.
+    /// A Strayed texture in Unity's own storage layout.
+    public sealed class RawTexture
+    {
+        public string Name;
+        public int Width, Height, Format, MipCount;
+        public byte[] Data;
+    }
+
     public sealed class StrayedIndex : IDisposable
     {
         public sealed class Entry
@@ -114,13 +121,22 @@ namespace StrayedSupply.Core
                                       m["m_IndexBuffer"]["Array"].AsByteArray, m["m_IndexFormat"].AsInt == 1);
         }
 
-        /// Returns BGRA32 pixels, width and height.
-        public byte[] LoadTexture(string name, out int width, out int height)
+        /// Returns the texture exactly as Unity stores it (Unity TextureFormat id, full mip chain), ready for
+        /// Texture2D.LoadRawTextureData in the host game: no decoding, the GPU reads it as is.
+        public RawTexture LoadTextureRaw(string name)
         {
             var e = Find(textures, name, AssetClassID.Texture2D);
-            var tf = TextureFile.ReadTextureFile(am.GetBaseField(e.Inst, e.Info));
-            width = tf.m_Width; height = tf.m_Height;
-            return tf.DecodeTextureRaw(tf.FillPictureData(e.Inst));
+            var t = am.GetBaseField(e.Inst, e.Info);
+            byte[] data = t["image data"].AsByteArray;
+            var stream = t["m_StreamData"];
+            if ((data == null || data.Length == 0) && stream != null && !stream.IsDummy && stream["size"].AsLong > 0)
+                data = ReadResS(e.Inst, stream["path"].AsString, stream["offset"].AsLong, stream["size"].AsLong);
+            if (data == null || data.Length == 0) throw new InvalidDataException($"Strayed texture '{name}' has no pixel data");
+            return new RawTexture
+            {
+                Name = e.Name, Width = t["m_Width"].AsInt, Height = t["m_Height"].AsInt,
+                Format = t["m_TextureFormat"].AsInt, MipCount = t["m_MipCount"].AsInt, Data = data
+            };
         }
 
         byte[] ReadResS(AssetsFileInstance inst, string resPath, long offset, long size)

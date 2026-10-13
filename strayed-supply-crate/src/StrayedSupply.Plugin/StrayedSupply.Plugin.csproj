@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- BepInEx 5 plugin for Gorilla Tag (Unity Mono). Builds against the installed game:
+       dotnet build -c Release -p:GtDir="C:\...\Gorilla Tag"
+       -p:Deploy=true also copies the plugin into <GtDir>\BepInEx\plugins\StrayedSupplyCrate -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <AssemblyName>StrayedSupplyCrate</AssemblyName>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <GtDir Condition="'$(GtDir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Gorilla Tag</GtDir>
+    <GtManaged>$(GtDir)\Gorilla Tag_Data\Managed</GtManaged>
+    <ClassDataTpk Condition="'$(ClassDataTpk)' == ''">$(TEMP)\classdata.tpk</ClassDataTpk>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\StrayedSupply.Core\StrayedSupply.Core.csproj" />
+    <Reference Include="$(GtDir)\BepInEx\core\BepInEx.dll" Private="false" />
+    <Reference Include="$(GtManaged)\UnityEngine.dll" Private="false" />
+    <Reference Include="$(GtManaged)\UnityEngine.CoreModule.dll" Private="false" />
+    <Reference Include="$(GtManaged)\UnityEngine.PhysicsModule.dll" Private="false" />
+    <Reference Include="$(GtManaged)\UnityEngine.XRModule.dll" Private="false" />
+    <Reference Include="$(GtManaged)\Assembly-CSharp.dll" Private="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="$(ClassDataTpk)" Link="classdata.tpk" CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(ClassDataTpk)')" />
+    <None Include="..\..\LICENSE" Link="LICENSE" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="DeployToGorillaTag" AfterTargets="Build" Condition="'$(Deploy)' == 'true'">
+    <ItemGroup>
+      <DeployFiles Include="$(OutDir)StrayedSupplyCrate.dll;$(OutDir)StrayedSupply.Core.dll;$(OutDir)AssetsTools.NET.dll;$(OutDir)classdata.tpk;$(OutDir)LICENSE" />
+    </ItemGroup>
+    <Copy SourceFiles="@(DeployFiles)" DestinationFolder="$(GtDir)\BepInEx\plugins\StrayedSupplyCrate" />
+  </Target>
+</Project>

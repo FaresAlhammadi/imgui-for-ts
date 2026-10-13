@@ -1,23 +1,22 @@
 {
   "sheet": "items",
-  "about": "Strayed gear in the supply crate. Each item is a People Playground item (ppgBase) wearing a sprite baked on the player's PC from their own Strayed install; no Strayed art ships with the mod.",
+  "about": "Strayed gear in the supply crate. Meshes and textures are read from the player's own Strayed install when Gorilla Tag starts; nothing from Strayed ships with the mod.",
   "columns": {
-    "id": "stable id used by the other sheets; also the baked sprite file name strayed/<id>.png",
-    "displayName": "name in the People Playground catalog",
+    "id": "stable id used by the other sheets",
+    "displayName": "item name (logs, README)",
     "strayedMesh": "Mesh name inside Strayed_Data, or name#pathId when Strayed reuses the name (list with src/StrayedIndexTool)",
     "strayedTexture": "Texture2D name (or name#pathId when reused) that the item prefab's material uses",
-    "strayedDamage": "damage in Strayed (strayed.wiki.gg/wiki/Tools player damage chart); 0 = not a weapon in the chart; shown in the item description",
-    "ppgBase": "People Playground item it is built on (behaviour, physics, sound); must exist in the game's catalog",
-    "lengthM": "real length in metres; the baker draws it at 50 px/m (People Playground's Baseball Bat is 42 px)",
+    "strayedDamage": "damage in Strayed (strayed.wiki.gg/wiki/Tools player damage chart); 0 = not a weapon in the chart; informational, nobody is hurt in Gorilla Tag",
+    "lengthM": "real length in metres; MeshFit scales the Strayed mesh to it (Strayed authors items at mixed scales)",
     "holdKind": "melee | light",
-    "lightRange": "light radius in metres, 0 when not a light",
+    "lightRange": "torch light range in metres, 0 when not a light",
     "massKg": "rigidbody mass",
     "verified": "true once mesh + texture were traced to the item's prefab in a real Strayed install"
   },
   "rows": [
-    {"id": "rock", "displayName": "Rock", "strayedMesh": "Rock", "strayedTexture": "Rock#2268", "strayedDamage": 12, "ppgBase": "Brick", "lengthM": 0.25, "holdKind": "melee", "lightRange": 0, "massKg": 1.0, "verified": true},
-    {"id": "torch", "displayName": "Torch", "strayedMesh": "SM_Torch_LOD0", "strayedTexture": "T_Torch_BC", "strayedDamage": 0, "ppgBase": "Torch", "lengthM": 0.6, "holdKind": "light", "lightRange": 4, "massKg": 0.6, "verified": true},
-    {"id": "stone_hatchet", "displayName": "Stone Hatchet", "strayedMesh": "SM_StoneHatchet_LOD0", "strayedTexture": "T_StoneHatchet_BC", "strayedDamage": 15, "ppgBase": "Axe", "lengthM": 0.45, "holdKind": "melee", "lightRange": 0, "massKg": 1.2, "verified": true},
-    {"id": "wooden_bat", "displayName": "Wooden Bat", "strayedMesh": "LOD0_Bat#4040", "strayedTexture": "RGB_2", "strayedDamage": 18, "ppgBase": "Baseball Bat", "lengthM": 0.85, "holdKind": "melee", "lightRange": 0, "massKg": 1.1, "verified": true}
+    {"id": "rock", "displayName": "Rock", "strayedMesh": "Rock", "strayedTexture": "Rock#2268", "strayedDamage": 12, "lengthM": 0.25, "holdKind": "melee", "lightRange": 0, "massKg": 1.0, "verified": true},
+    {"id": "torch", "displayName": "Torch", "strayedMesh": "SM_Torch_LOD0", "strayedTexture": "T_Torch_BC", "strayedDamage": 0, "lengthM": 0.6, "holdKind": "light", "lightRange": 4, "massKg": 0.6, "verified": true},
+    {"id": "stone_hatchet", "displayName": "Stone Hatchet", "strayedMesh": "SM_StoneHatchet_LOD0", "strayedTexture": "T_StoneHatchet_BC", "strayedDamage": 15, "lengthM": 0.45, "holdKind": "melee", "lightRange": 0, "massKg": 1.2, "verified": true},
+    {"id": "wooden_bat", "displayName": "Wooden Bat", "strayedMesh": "LOD0_Bat#4040", "strayedTexture": "RGB_2", "strayedDamage": 18, "lengthM": 0.85, "holdKind": "melee", "lightRange": 0, "massKg": 1.1, "verified": true}
   ]
 }

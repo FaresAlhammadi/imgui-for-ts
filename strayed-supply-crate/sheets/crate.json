@@ -1,16 +1,16 @@
 {
   "sheet": "crate",
-  "about": "The Strayed supply crate dropped into the map when a map loads.",
+  "about": "The Strayed supply crate placed in front of the player when the level starts.",
   "columns": {
     "id": "stable id",
     "spawnHook": "hooks.id that triggers the spawn",
-    "ppgBase": "People Playground item the crate is built on",
-    "offset": "People Playground units from the camera centre, [right, up]",
-    "contents": "items.id list released when the crate opens",
-    "openBy": "activate = People Playground's Use/activate action",
-    "oncePerMap": "true = one crate each time a map loads"
+    "offset": "metres from the player's head, [right, up, forward]; up is then snapped to the ground below",
+    "contents": "items.id list standing inside the open-top crate",
+    "openBy": "open_top = items stand inside and are grabbed straight out",
+    "oncePerRun": "true = one crate per game session (respawns only after a scene reload)",
+    "strayedTexture": "Strayed Texture2D on the crate's boards (read from the player's install like the items)"
   },
   "rows": [
-    {"id": "supply_crate", "spawnHook": "map_loaded", "ppgBase": "Crate", "offset": [0.0, 2.0], "contents": ["rock", "torch", "stone_hatchet", "wooden_bat"], "openBy": "activate", "oncePerMap": true}
+    {"id": "supply_crate", "spawnHook": "player_ready", "offset": [0.0, 0.0, 1.0], "contents": ["rock", "torch", "stone_hatchet", "wooden_bat"], "openBy": "open_top", "oncePerRun": true, "strayedTexture": "WoodenCrate02"}
   ]
 }

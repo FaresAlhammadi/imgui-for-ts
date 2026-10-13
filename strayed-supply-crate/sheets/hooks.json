@@ -1,21 +1,19 @@
 {
   "sheet": "hooks",
-  "about": "People Playground 1.27.18 API the mod uses. Mods are C# source compiled by the game's sandboxed ppgModCompiler (no file IO, reflection or external DLLs), so the Strayed side runs outside the game in the baker.",
+  "about": "Gorilla Tag (Steam, Unity 6000.2.9 Mono, BepInEx 5.4.23.4) members the plugin uses, read from the installed game's Managed assemblies.",
   "columns": {
     "id": "stable id",
     "purpose": "what the mod does there",
-    "ppgClass": "class in People Playground_Data/Managed/Assembly-CSharp.dll (or UnityEngine)",
-    "ppgMember": "member used",
+    "gtClass": "class in Gorilla Tag_Data/Managed (Assembly-CSharp unless UnityEngine)",
+    "gtMember": "member used",
     "verified": "true once found in the installed game's assemblies"
   },
   "rows": [
-    {"id": "map_loaded", "purpose": "notice a map load and drop the crate", "ppgClass": "MapLoaderBehaviour", "ppgMember": "CurrentMap (static field, polled each frame)", "verified": true},
-    {"id": "view_centre", "purpose": "place the crate in view", "ppgClass": "UnityEngine.Camera", "ppgMember": "main", "verified": true},
-    {"id": "register_item", "purpose": "add each Strayed item and the crate to the catalog", "ppgClass": "ModAPI", "ppgMember": "Register(Modification)", "verified": true},
-    {"id": "load_sprite", "purpose": "load a baked sprite from the mod folder", "ppgClass": "ModAPI", "ppgMember": "LoadSprite(string, float, bool)", "verified": true},
-    {"id": "spawn_item", "purpose": "spawn the crate and its contents like the catalog does", "ppgClass": "CatalogBehaviour", "ppgMember": "Main.PerformInstantiation(SpawnableAsset, Vector3, ref bool, float)", "verified": true},
-    {"id": "fix_colliders", "purpose": "refit colliders to the new sprite", "ppgClass": "Utils", "ppgMember": "FixColliders(GameObject)", "verified": true},
-    {"id": "light", "purpose": "give the torch light", "ppgClass": "ModAPI", "ppgMember": "CreateLight(Transform, Color, float, float)", "verified": true},
-    {"id": "activate", "purpose": "open the crate when the player uses it", "ppgClass": "MonoBehaviour message", "ppgMember": "Use(ActivationPropagation)", "verified": true}
+    {"id": "player_ready", "purpose": "spawn once the local gorilla exists", "gtClass": "GorillaTagger / GorillaLocomotion.GTPlayer", "gtMember": "Instance (static property)", "verified": true},
+    {"id": "player_head", "purpose": "place the crate in front of the player", "gtClass": "GorillaTagger", "gtMember": "mainCamera (GameObject)", "verified": true},
+    {"id": "hands", "purpose": "hand positions for grabbing", "gtClass": "GorillaTagger", "gtMember": "leftHandTransform / rightHandTransform", "verified": true},
+    {"id": "grip", "purpose": "grip pressed / released per hand", "gtClass": "ControllerInputPoller", "gtMember": "GetGrabMomentary(XRNode) / GetGrabReleaseMomentary(XRNode)", "verified": true},
+    {"id": "room_gate", "purpose": "exist only offline or in a private room (Another Axiom's mod policy: no gameplay mods in public lobbies)", "gtClass": "NetworkSystem", "gtMember": "Instance.InRoom / Instance.SessionIsPrivate", "verified": true},
+    {"id": "shader", "purpose": "a lit shader the game ships", "gtClass": "UnityEngine.Shader", "gtMember": "Find: Universal Render Pipeline/Lit, then /Simple Lit, /Unlit, GorillaTag/UberShader", "verified": true}
   ]
 }

@@ -1,0 +1,22 @@
+{
+  "sheet": "items",
+  "about": "Strayed gear that appears in the supply crate. Meshes and textures are read from the player's own Strayed install at run time; nothing from either game ships in the release.",
+  "columns": {
+    "id": "stable id used by the other sheets",
+    "displayName": "name shown on the crate label",
+    "strayedMesh": "Mesh object name inside Strayed_Data (verify with tools/strayed_index on a real install)",
+    "strayedTexture": "Texture2D object name inside Strayed_Data (verify the same way)",
+    "strayedDamage": "damage in Strayed (strayed.wiki.gg/wiki/Tools player damage chart)",
+    "acDamage": "damage dealt to Animal Company monsters per hit",
+    "holdKind": "how the item is held: melee | light",
+    "lightRange": "torch light range in metres, 0 when not a light",
+    "massKg": "rigidbody mass",
+    "verified": "true once mesh + texture names were found in a real Strayed install"
+  },
+  "rows": [
+    { "id": "rock",          "displayName": "Rock",          "strayedMesh": null, "strayedTexture": null, "strayedDamage": 12,   "acDamage": null, "holdKind": "melee", "lightRange": 0, "massKg": 1.0, "verified": false },
+    { "id": "torch",         "displayName": "Torch",         "strayedMesh": null, "strayedTexture": null, "strayedDamage": null, "acDamage": null, "holdKind": "light", "lightRange": 8, "massKg": 0.6, "verified": false },
+    { "id": "stone_hatchet", "displayName": "Stone Hatchet", "strayedMesh": null, "strayedTexture": null, "strayedDamage": null, "acDamage": null, "holdKind": "melee", "lightRange": 0, "massKg": 1.2, "verified": false },
+    { "id": "wooden_bat",    "displayName": "Wooden Bat",    "strayedMesh": null, "strayedTexture": null, "strayedDamage": 18,   "acDamage": null, "holdKind": "melee", "lightRange": 0, "massKg": 1.1, "verified": false }
+  ]
+}

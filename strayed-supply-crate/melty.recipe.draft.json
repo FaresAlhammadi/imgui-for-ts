@@ -1,0 +1,16 @@
+{
+  "_status": "DRAFT - not yet checked with Melty's validate_recipe/one_click_check (melty.gg is blocked from the build workspace).",
+  "games": [
+    { "slug": "pc-animal-company", "role": "primary" },
+    { "slug": "pc-strayed", "role": "companion" }
+  ],
+  "components": [
+    { "name": "BepInEx 6 (Unity IL2CPP)", "fileName": "BepInEx-Unity.IL2CPP-win-x64-6.*.zip", "install": { "to": "{game}" },
+      "credit": "BepInEx team, LGPL-2.1, bundled because Melty has no loader configuration for Animal Company" },
+    { "name": "Strayed Supply Crate", "fileName": "StrayedSupply-*.zip", "install": { "to": "{game}/BepInEx/plugins/StrayedSupply" } }
+  ],
+  "launch": {
+    "kind": "game",
+    "env": { "STRAYED_SUPPLY_STRAYED_DIR": "{game:pc-strayed}" }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "sheet": "crate",
+  "about": "The Strayed supply crate that appears beside the player when a run starts.",
+  "columns": {
+    "id": "stable id",
+    "spawnHook": "hooks.id that triggers the spawn",
+    "offset": "metres from the player's head, [right, up, forward]",
+    "contents": "items.id list placed inside",
+    "openBy": "how it opens: grab_lid",
+    "oncePerRun": "true = one crate per run"
+  },
+  "rows": [
+    { "id": "supply_crate", "spawnHook": "run_start", "offset": [0.0, -1.2, 0.8], "contents": ["rock", "torch", "stone_hatchet", "wooden_bat"], "openBy": "grab_lid", "oncePerRun": true }
+  ]
+}

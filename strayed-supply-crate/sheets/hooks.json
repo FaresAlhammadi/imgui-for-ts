@@ -1,0 +1,41 @@
+{
+  "sheet": "hooks",
+  "about": "Points in Animal Company (Unity IL2CPP, BepInEx 6 IL2CPP plugin) the mod attaches to. Class/method names must be read from the player's Animal Company build with Il2CppInterop's generated assemblies before they count as verified.",
+  "columns": {
+    "id": "stable id",
+    "purpose": "what the mod does there",
+    "acClass": "Animal Company class (from interop/Assembly-CSharp.dll)",
+    "acMethod": "method patched (Harmony postfix unless noted)",
+    "verified": "true once found in the real build"
+  },
+  "rows": [
+    {
+      "id": "run_start",
+      "purpose": "spawn the supply crate when the player's run/level loads",
+      "acClass": "UnityEngine.SceneManagement.SceneManager",
+      "acMethod": "sceneLoaded (event; spawn once a camera exists)",
+      "verified": false
+    },
+    {
+      "id": "player_head",
+      "purpose": "read the local player's head transform for crate placement",
+      "acClass": "UnityEngine.Camera",
+      "acMethod": "get_main",
+      "verified": false
+    },
+    {
+      "id": "monster_hit",
+      "purpose": "apply items.acDamage when a Strayed item strikes a monster",
+      "acClass": null,
+      "acMethod": null,
+      "verified": false
+    },
+    {
+      "id": "grabbable",
+      "purpose": "make spawned items grabbable with Animal Company's own grab system",
+      "acClass": null,
+      "acMethod": null,
+      "verified": false
+    }
+  ]
+}

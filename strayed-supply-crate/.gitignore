@@ -1,2 +1,4 @@
 bin/
 obj/
+# baked on the player's PC from their own Strayed install; never committed or shipped
+ppg/StrayedSupplyCrate/strayed/

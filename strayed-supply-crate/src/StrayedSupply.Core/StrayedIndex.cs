@@ -21,6 +21,8 @@ namespace StrayedSupply.Core
         }
 
         readonly AssetsManager am = new AssetsManager();
+        readonly List<FileStream> streams = new List<FileStream>();
+        readonly HashSet<string> ambiguous = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         readonly Dictionary<string, Entry> meshes = new Dictionary<string, Entry>(StringComparer.OrdinalIgnoreCase);
         readonly Dictionary<string, Entry> textures = new Dictionary<string, Entry>(StringComparer.OrdinalIgnoreCase);
 
@@ -28,16 +30,31 @@ namespace StrayedSupply.Core
         public IReadOnlyDictionary<string, Entry> Meshes => meshes;
         public IReadOnlyDictionary<string, Entry> Textures => textures;
 
+        /// Key an asset is listed under: its name, or "name#pathId" when Strayed reuses the name.
+        public static string Key(Entry e) => e.Name + "#" + e.PathId;
+        public bool IsAmbiguous(Entry e) => ambiguous.Contains(e.Kind + ":" + e.Name);
+
+        Entry Find(Dictionary<string, Entry> from, string key, AssetClassID kind)
+        {
+            if (ambiguous.Contains(kind + ":" + key)) throw new KeyNotFoundException($"Strayed {kind} name '{key}' is used more than once; give it as '{key}#<pathId>'");
+            if (!from.TryGetValue(key, out var e)) throw new KeyNotFoundException($"Strayed {kind} '{key}' not found");
+            return e;
+        }
+
         /// strayedFolder: the folder Melty passes as {game:pc-strayed}. classDataTpk: type database for
         /// IL2CPP builds whose files carry no type trees (bundled with the mod, MIT, from AssetRipper/Tpk).
         public StrayedIndex(string strayedFolder, string classDataTpk)
         {
             DataFolder = FindDataFolder(strayedFolder);
             if (classDataTpk != null && System.IO.File.Exists(classDataTpk)) am.LoadClassPackage(classDataTpk);
-            foreach (var path in Directory.GetFiles(DataFolder, "*.assets"))
-                Scan(path);
-            foreach (var path in Directory.GetFiles(DataFolder, "level*"))
-                if (Path.GetExtension(path) == "") Scan(path);
+            try
+            {
+                foreach (var path in Directory.GetFiles(DataFolder, "*.assets"))
+                    Scan(path);
+                foreach (var path in Directory.GetFiles(DataFolder, "level*"))
+                    if (Path.GetExtension(path) == "") Scan(path);
+            }
+            catch { Dispose(); throw; }
         }
 
         public static string FindDataFolder(string strayedFolder)
@@ -53,9 +70,15 @@ namespace StrayedSupply.Core
         void Scan(string path)
         {
             AssetsFileInstance inst;
-            try { inst = am.LoadAssetsFile(path, true); } catch { return; }
+            var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            streams.Add(fs);
+            try { inst = am.LoadAssetsFile(fs, true); } catch { return; }
             if (inst.file.Metadata.TypeTreeEnabled == false)
+            {
+                if (am.ClassPackage == null)
+                    throw new FileNotFoundException($"{Path.GetFileName(path)} has no type trees; classdata.tpk is required");
                 am.LoadClassDatabaseFromPackage(inst.file.Metadata.UnityVersion);
+            }
             Add(inst, AssetClassID.Mesh, meshes);
             Add(inst, AssetClassID.Texture2D, textures);
         }
@@ -66,14 +89,17 @@ namespace StrayedSupply.Core
             {
                 string name;
                 try { name = am.GetBaseField(inst, info)["m_Name"].AsString; } catch { continue; }
-                if (string.IsNullOrEmpty(name) || into.ContainsKey(name)) continue;
-                into[name] = new Entry { Name = name, File = Path.GetFileName(inst.path), Kind = kind, PathId = info.PathId, Inst = inst, Info = info };
+                if (string.IsNullOrEmpty(name)) continue;
+                var e = new Entry { Name = name, File = Path.GetFileName(inst.path), Kind = kind, PathId = info.PathId, Inst = inst, Info = info };
+                // a name Strayed reuses is ambiguous; such assets are looked up as "name#pathId"
+                if (into.TryGetValue(name, out var first)) { ambiguous.Add(kind + ":" + name); into[Key(first)] = first; into[Key(e)] = e; }
+                else into[name] = e;
             }
         }
 
         public DecodedMesh LoadMesh(string name)
         {
-            if (!meshes.TryGetValue(name, out var e)) throw new KeyNotFoundException($"Strayed mesh '{name}' not found");
+            var e = Find(meshes, name, AssetClassID.Mesh);
             var m = am.GetBaseField(e.Inst, e.Info);
             if (m["m_MeshCompression"].AsInt != 0) throw new NotSupportedException($"Strayed mesh '{name}' is compressed");
             var vd = m["m_VertexData"];
@@ -84,14 +110,14 @@ namespace StrayedSupply.Core
             var stream = m["m_StreamData"];
             if ((data == null || data.Length == 0) && stream != null && !stream.IsDummy && stream["size"].AsLong > 0)
                 data = ReadResS(e.Inst, stream["path"].AsString, stream["offset"].AsLong, stream["size"].AsLong);
-            return MeshDecoder.Decode(name, vd["m_VertexCount"].AsInt, channels, data,
+            return MeshDecoder.Decode(e.Name, vd["m_VertexCount"].AsInt, channels, data,
                                       m["m_IndexBuffer"]["Array"].AsByteArray, m["m_IndexFormat"].AsInt == 1);
         }
 
         /// Returns BGRA32 pixels, width and height.
         public byte[] LoadTexture(string name, out int width, out int height)
         {
-            if (!textures.TryGetValue(name, out var e)) throw new KeyNotFoundException($"Strayed texture '{name}' not found");
+            var e = Find(textures, name, AssetClassID.Texture2D);
             var tf = TextureFile.ReadTextureFile(am.GetBaseField(e.Inst, e.Info));
             width = tf.m_Width; height = tf.m_Height;
             return tf.DecodeTextureRaw(tf.FillPictureData(e.Inst));
@@ -110,6 +136,11 @@ namespace StrayedSupply.Core
             }
         }
 
-        public void Dispose() => am.UnloadAll(true);
+        public void Dispose()
+        {
+            am.UnloadAll(true);
+            foreach (var s in streams) s.Dispose();
+            streams.Clear();
+        }
     }
 }

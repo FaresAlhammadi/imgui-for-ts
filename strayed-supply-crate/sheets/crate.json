@@ -1,15 +1,16 @@
 {
   "sheet": "crate",
-  "about": "The Strayed supply crate that appears beside the player when a run starts.",
+  "about": "The Strayed supply crate dropped into the map when a map loads.",
   "columns": {
     "id": "stable id",
     "spawnHook": "hooks.id that triggers the spawn",
-    "offset": "metres from the player's head, [right, up, forward]",
-    "contents": "items.id list placed inside",
-    "openBy": "how it opens: grab_lid",
-    "oncePerRun": "true = one crate per run"
+    "ppgBase": "People Playground item the crate is built on",
+    "offset": "People Playground units from the camera centre, [right, up]",
+    "contents": "items.id list released when the crate opens",
+    "openBy": "activate = People Playground's Use/activate action",
+    "oncePerMap": "true = one crate each time a map loads"
   },
   "rows": [
-    { "id": "supply_crate", "spawnHook": "run_start", "offset": [0.0, -1.2, 0.8], "contents": ["rock", "torch", "stone_hatchet", "wooden_bat"], "openBy": "grab_lid", "oncePerRun": true }
+    {"id": "supply_crate", "spawnHook": "map_loaded", "ppgBase": "Crate", "offset": [0.0, 2.0], "contents": ["rock", "torch", "stone_hatchet", "wooden_bat"], "openBy": "activate", "oncePerMap": true}
   ]
 }

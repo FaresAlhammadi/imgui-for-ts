@@ -1,16 +1,28 @@
 {
-  "_status": "DRAFT - not yet checked with Melty's validate_recipe/one_click_check (melty.gg is blocked from the build workspace).",
+  "_status": "DRAFT - not published. Not yet checked with Melty validate_recipe/one_click_check; the game slugs and the prelaunch step are unverified. Mod not yet run in game (People Playground Safe mode).",
+  "license": "MIT",
+  "remix": true,
+  "players": "solo",
   "games": [
-    { "slug": "pc-animal-company", "role": "primary" },
+    { "slug": "pc-people-playground", "role": "primary" },
     { "slug": "pc-strayed", "role": "companion" }
   ],
   "components": [
-    { "name": "BepInEx 6 (Unity IL2CPP)", "fileName": "BepInEx-Unity.IL2CPP-win-x64-6.*.zip", "install": { "to": "{game}" },
-      "credit": "BepInEx team, LGPL-2.1, bundled because Melty has no loader configuration for Animal Company" },
-    { "name": "Strayed Supply Crate", "fileName": "StrayedSupply-*.zip", "install": { "to": "{game}/BepInEx/plugins/StrayedSupply" } }
+    { "name": "Strayed Supply Crate (People Playground mod)", "fileName": "StrayedSupplyCrate-mod-*.zip",
+      "install": { "to": "{game}/Mods/StrayedSupplyCrate" },
+      "contains": ["mod.json", "StrayedSupplyCrate.cs", "Sheets.g.cs", "thumb.png"],
+      "credit": "MIT" },
+    { "name": "Strayed Supply Baker", "fileName": "StrayedSupplyBaker-win-x64-*.zip",
+      "install": { "to": "{game}/Mods/StrayedSupplyCrate/.baker" },
+      "contains": ["StrayedSupplyBaker.exe", "StrayedSupply.Core.dll", "AssetsTools.NET.dll", "AssetsTools.NET.Texture.dll", "classdata.tpk", "items.json"],
+      "credit": "MIT; includes AssetsTools.NET (MIT) and AssetRipper Tpk classdata.tpk (MIT)" }
   ],
   "launch": {
     "kind": "game",
-    "env": { "STRAYED_SUPPLY_STRAYED_DIR": "{game:pc-strayed}" }
+    "prelaunch": {
+      "run": "{game}/Mods/StrayedSupplyCrate/.baker/StrayedSupplyBaker.exe",
+      "args": ["{game:pc-strayed}", "{game}/Mods/StrayedSupplyCrate/.baker/classdata.tpk", "{game}/Mods/StrayedSupplyCrate/.baker/items.json", "{game}/Mods/StrayedSupplyCrate/strayed"]
+    },
+    "notes": "People Playground Safe mode must be off for code mods; the player turns it off in Settings."
   }
 }

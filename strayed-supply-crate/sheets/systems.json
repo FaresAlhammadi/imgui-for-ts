@@ -3,15 +3,16 @@
   "about": "Every system the mashup touches.",
   "columns": {
     "id": "stable id",
-    "game": "animal-company | strayed",
+    "game": "people-playground | strayed",
     "does": "what it does",
     "uses": "references into other sheets, as sheet.id",
     "code": "source file that implements it"
   },
   "rows": [
-    { "id": "strayed_index",  "game": "strayed",         "does": "open the player's Strayed_Data and find each item's mesh and texture by name", "uses": ["items.rock", "items.torch", "items.stone_hatchet", "items.wooden_bat"], "code": "src/StrayedSupply.Core/StrayedIndex.cs" },
-    { "id": "mesh_decode",    "game": "strayed",         "does": "decode Strayed Mesh vertex/index data into plain arrays", "uses": [], "code": "src/StrayedSupply.Core/MeshDecoder.cs" },
-    { "id": "crate_spawn",    "game": "animal-company",  "does": "build the crate and its contents in front of the player", "uses": ["crate.supply_crate", "hooks.run_start", "hooks.player_head"], "code": "src/StrayedSupply.Plugin/CrateSpawner.cs" },
-    { "id": "item_combat",    "game": "animal-company",  "does": "Strayed items hurt monsters; the torch lights up", "uses": ["hooks.monster_hit", "hooks.grabbable"], "code": "src/StrayedSupply.Plugin/ItemBehaviour.cs" }
+    {"id": "strayed_index", "game": "strayed", "does": "open the player's Strayed_Data and find each item's mesh and texture", "uses": ["items.rock", "items.torch", "items.stone_hatchet", "items.wooden_bat"], "code": "src/StrayedSupply.Core/StrayedIndex.cs"},
+    {"id": "mesh_decode", "game": "strayed", "does": "decode Strayed Mesh vertex/index data into plain arrays", "uses": [], "code": "src/StrayedSupply.Core/MeshDecoder.cs"},
+    {"id": "sprite_bake", "game": "strayed", "does": "render each item side-on into a pixel sprite in the mod's strayed/ folder", "uses": ["items.rock", "items.torch", "items.stone_hatchet", "items.wooden_bat"], "code": "src/StrayedSupply.Baker/Program.cs"},
+    {"id": "item_register", "game": "people-playground", "does": "register the four Strayed items and the crate in a Strayed Supply category", "uses": ["hooks.register_item", "hooks.load_sprite", "hooks.fix_colliders", "hooks.light"], "code": "ppg/StrayedSupplyCrate/StrayedSupplyCrate.cs"},
+    {"id": "crate_spawn", "game": "people-playground", "does": "drop the crate when a map loads; open it on Use to release the items", "uses": ["crate.supply_crate", "hooks.map_loaded", "hooks.view_centre", "hooks.spawn_item", "hooks.activate"], "code": "ppg/StrayedSupplyCrate/StrayedSupplyCrate.cs"}
   ]
 }

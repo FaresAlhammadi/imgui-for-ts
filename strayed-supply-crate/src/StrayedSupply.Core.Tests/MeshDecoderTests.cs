@@ -45,4 +45,26 @@ public class MeshDecoderTests
     {
         Assert.Throws<DirectoryNotFoundException>(() => StrayedIndex.FindDataFolder("/no/such/strayed"));
     }
+
+    [Fact]
+    public void MissingClassDataIsReportedForFilesWithoutTypeTrees()
+    {
+        // minimal v22 serialized file: enableTypeTree = false, no types, no objects
+        var dir = Directory.CreateTempSubdirectory().FullName;
+        var data = Directory.CreateDirectory(Path.Combine(dir, "Game_Data")).FullName;
+        File.WriteAllBytes(Path.Combine(data, "globalgamemanagers"), new byte[0]);
+        var meta = new MemoryStream(); var mw = new BinaryWriter(meta);
+        mw.Write(System.Text.Encoding.ASCII.GetBytes("2022.3.0f1\0")); mw.Write(19); mw.Write((byte)0);
+        mw.Write(0); mw.Write(0); mw.Write(0); mw.Write(0); mw.Write(0); mw.Write((byte)0);
+        var m = meta.ToArray();
+        var f = new MemoryStream(); var w = new BinaryWriter(f);
+        void Be32(uint v) { var b = BitConverter.GetBytes(v); Array.Reverse(b); w.Write(b); }
+        void Be64(ulong v) { var b = BitConverter.GetBytes(v); Array.Reverse(b); w.Write(b); }
+        Be32(0); Be32(0); Be32(22); Be32(0); w.Write(0);
+        Be32((uint)m.Length); Be64((ulong)(48 + m.Length)); Be64((ulong)(48 + m.Length)); Be64(0);
+        w.Write(m);
+        File.WriteAllBytes(Path.Combine(data, "sharedassets0.assets"), f.ToArray());
+        try { Assert.Throws<FileNotFoundException>(() => new StrayedIndex(dir, null)); }
+        finally { Directory.Delete(dir, true); }
+    }
 }

@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Type-checks the People Playground mod source against the installed game's assemblies (the game
+       compiles the real thing itself). dotnet build -p:PpgDir="C:\...\People Playground" -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>7.3</LangVersion>
+    <OutputType>Library</OutputType>
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+    <NoStdLib>true</NoStdLib>
+    <NoWarn>$(NoWarn);CS1701;CS1702;MSB3277</NoWarn>
+    <PpgDir Condition="'$(PpgDir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\People Playground</PpgDir>
+    <PpgManaged>$(PpgDir)\People Playground_Data\Managed</PpgManaged>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\ppg\StrayedSupplyCrate\*.cs" />
+    <Reference Include="$(PpgManaged)\mscorlib.dll" Private="false" />
+    <Reference Include="$(PpgManaged)\netstandard.dll" Private="false" />
+    <Reference Include="$(PpgManaged)\System.dll" Private="false" />
+    <Reference Include="$(PpgManaged)\System.Core.dll" Private="false" />
+    <Reference Include="$(PpgManaged)\UnityEngine*.dll" Private="false" />
+    <Reference Include="$(PpgManaged)\Assembly-CSharp.dll" Private="false" />
+  </ItemGroup>
+</Project>

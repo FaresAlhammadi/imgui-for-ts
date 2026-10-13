@@ -1,41 +1,21 @@
 {
   "sheet": "hooks",
-  "about": "Points in Animal Company (Unity IL2CPP, BepInEx 6 IL2CPP plugin) the mod attaches to. Class/method names must be read from the player's Animal Company build with Il2CppInterop's generated assemblies before they count as verified.",
+  "about": "People Playground 1.27.18 API the mod uses. Mods are C# source compiled by the game's sandboxed ppgModCompiler (no file IO, reflection or external DLLs), so the Strayed side runs outside the game in the baker.",
   "columns": {
     "id": "stable id",
     "purpose": "what the mod does there",
-    "acClass": "Animal Company class (from interop/Assembly-CSharp.dll)",
-    "acMethod": "method patched (Harmony postfix unless noted)",
-    "verified": "true once found in the real build"
+    "ppgClass": "class in People Playground_Data/Managed/Assembly-CSharp.dll (or UnityEngine)",
+    "ppgMember": "member used",
+    "verified": "true once found in the installed game's assemblies"
   },
   "rows": [
-    {
-      "id": "run_start",
-      "purpose": "spawn the supply crate when the player's run/level loads",
-      "acClass": "UnityEngine.SceneManagement.SceneManager",
-      "acMethod": "sceneLoaded (event; spawn once a camera exists)",
-      "verified": false
-    },
-    {
-      "id": "player_head",
-      "purpose": "read the local player's head transform for crate placement",
-      "acClass": "UnityEngine.Camera",
-      "acMethod": "get_main",
-      "verified": false
-    },
-    {
-      "id": "monster_hit",
-      "purpose": "apply items.acDamage when a Strayed item strikes a monster",
-      "acClass": null,
-      "acMethod": null,
-      "verified": false
-    },
-    {
-      "id": "grabbable",
-      "purpose": "make spawned items grabbable with Animal Company's own grab system",
-      "acClass": null,
-      "acMethod": null,
-      "verified": false
-    }
+    {"id": "map_loaded", "purpose": "notice a map load and drop the crate", "ppgClass": "MapLoaderBehaviour", "ppgMember": "CurrentMap (static field, polled each frame)", "verified": true},
+    {"id": "view_centre", "purpose": "place the crate in view", "ppgClass": "UnityEngine.Camera", "ppgMember": "main", "verified": true},
+    {"id": "register_item", "purpose": "add each Strayed item and the crate to the catalog", "ppgClass": "ModAPI", "ppgMember": "Register(Modification)", "verified": true},
+    {"id": "load_sprite", "purpose": "load a baked sprite from the mod folder", "ppgClass": "ModAPI", "ppgMember": "LoadSprite(string, float, bool)", "verified": true},
+    {"id": "spawn_item", "purpose": "spawn the crate and its contents like the catalog does", "ppgClass": "CatalogBehaviour", "ppgMember": "Main.PerformInstantiation(SpawnableAsset, Vector3, ref bool, float)", "verified": true},
+    {"id": "fix_colliders", "purpose": "refit colliders to the new sprite", "ppgClass": "Utils", "ppgMember": "FixColliders(GameObject)", "verified": true},
+    {"id": "light", "purpose": "give the torch light", "ppgClass": "ModAPI", "ppgMember": "CreateLight(Transform, Color, float, float)", "verified": true},
+    {"id": "activate", "purpose": "open the crate when the player uses it", "ppgClass": "MonoBehaviour message", "ppgMember": "Use(ActivationPropagation)", "verified": true}
   ]
 }

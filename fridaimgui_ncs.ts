@@ -16,14 +16,14 @@ const DISCORD_URL    = "https://discord.gg/UxUGNmTKJG";
 const MENU_VERSION   = "v1.0";
 const MENU_HOLD_X    = true;
 const SHOW_LASER     = true;
-const THEME          = "ImGuiDark";
+const THEME          = "Skire";
 const ROW_LAYOUT     = false;
 const SIDEBAR_TABS   = false;
 const SIDEBAR_WIDTH  = 150;
 const WINDOW_WIDTH   = 1118;
-const WINDOW_PATTERN = false;
+const WINDOW_PATTERN = true;
 const SPIRAL_SPIN    = 30;
-const SPIRAL_CENTER  = 0.03;
+const SPIRAL_CENTER  = 0;
 const HUD_ENABLED    = true;
 const HUD_OFFSET     = [0.30, 0.16, 1.0];
 const HUD_FONT       = 22;
@@ -42,13 +42,13 @@ const SHAPES         = "mesh";
 const SPAWN_DISTANCE = 0.45;
 const RAY_PITCH_DEG  = 0;
 const TRIG_THRESH    = 0.55;
-const CLASSIC_TITLE  = false;
+const CLASSIC_TITLE  = true;
 const MENU_KEYBOARD  = true;
 const PIXEL_FONT     = true;
 const TAB_ROUNDING   = 9;
-const TITLE_FPS      = false;     // FPS line under the title (the HUD shows FPS)
+const TITLE_FPS      = true;      // FPS line under the title
 const TITLE_DISCORD  = false;     // Discord button in the title bar
-const MENU_BAR       = true;      // Menu / Tools bar under the title
+const MENU_BAR       = false;     // Menu / Tools bar under the title
 const FONT_PREFERENCE = ["RobotoMono-Medium", "RobotoMono-Regular", "CourierPrime", "LiberationMono", "consola", "LiberationSans", "Roboto-Regular"];
 
 const EXTRA_FRAME_HOOKS = ["HurricaneVR.Framework.Core.Player.HVRPlayerController",
@@ -110,10 +110,14 @@ const MODES = ["Normal", "Fast", "Chaos"];
 
 // Placeholder tabs: every control works (toggles, sliders, lists, buttons) but nothing is wired to a script.
 const PH = {
+	freeze: ref(false), flyHand: ref(0), velHand: ref(0), flySpeed: ref(1.0), players: ref(0),
+	fly: [ref(true), ref(false), ref(false), ref(false)], vel: [ref(false), ref(false), ref(false), ref(false)],
 	toggles: [ref(false), ref(false), ref(false), ref(false), ref(false), ref(false)],
 	speed: ref(1.0), amount: ref(1), mode: ref(0), hand: ref(0), item: ref(0), group: ref(false),
 	scale: ref(1.0), count: ref(1),
 };
+const PH_PLAYERS = Array.from({ length: 10 }, (_, i) => "Placeholder Player " + (i + 1));
+const PH_BUTTONS = ["Trigger", "Grip", "Primary", "Secondary"];
 const PH_ITEMS = Array.from({ length: 24 }, (_, i) => "Placeholder Item " + (i + 1 < 10 ? "0" : "") + (i + 1));
 const PH_WARNING = ["This tab is a placeholder.", "Nothing in it is connected to a script, so it won't do anything in NCS (Nightclub Simulator). The buttons, toggles and sliders still work - they just don't run any mods."];
 const phSeen = new Set<string>();
@@ -144,7 +148,7 @@ function mainMenuBar(ui: any) {
 	else if (it === "Test Notification") ui.notify("Test notification");
 	else if (it === "Quit") ui.close();
 	else if (it === "About") ui.confirm("About", [MENU_TITLE + " " + MENU_VERSION, "Dear ImGui style VR menu - pixel ProggyClean font.", "Skire - inspiration, Astraeus - coding."], "Close", () => {}, "OK");
-	else ui.selectTab("tabs", it);
+	else ui.selectTab("tabs", it === "Soundboard" ? "Soundboard" : "Settings");
 }
 
 function drawMenu(ui: any): void {
@@ -155,74 +159,83 @@ function drawMenu(ui: any): void {
 
 		if (ui.tabItem("Player")) {
 			if (placeholderGate(ui, "Player")) {
-				if (ui.collapsingHeader("Movement", true)) {
-					ui.checkbox("Placeholder Toggle 1", PH.toggles[0]);
-					ui.checkbox("Placeholder Toggle 2", PH.toggles[1]);
-					ui.sliderFloat("Placeholder Speed", PH.speed, 1, 10, 2);
-					if (ui.treeNode("Placeholder Group", true)) {
-						ui.combo("Placeholder Hand", PH.hand, HANDS);
-						ui.checkbox("Placeholder Toggle 3", PH.toggles[2]);
-						ui.checkbox("Placeholder Toggle 4", PH.toggles[3]);
+				if (ui.section("Movement", true)) {
+					ui.checkbox("Freeze In Menu", PH.freeze);
+					if (ui.treeNode("Hand Fly", true)) {
+						ui.combo("Target hand", PH.flyHand, HANDS);
+						for (let i = 0; i < 4; i++) ui.checkbox(PH_BUTTONS[i], PH.fly[i]);
+						ui.sliderFloat("Fly Speed", PH.flySpeed, 0.1, 5, 2);
 						ui.treePop();
 					}
-				}
-				if (ui.collapsingHeader("Actions", true)) {
-					if (ui.button("Placeholder Button 1")) phClick(ui, "Placeholder Button 1");
-					ui.sameLine();
-					if (ui.button("Placeholder Button 2")) phClick(ui, "Placeholder Button 2");
+					if (ui.treeNode("Velocity Fly", true)) {
+						ui.combo("Target hand##vel", PH.velHand, HANDS);
+						for (let i = 0; i < 4; i++) ui.checkbox(PH_BUTTONS[i] + "##vel", PH.vel[i]);
+						ui.treePop();
+					}
+					ui.endSection();
 				}
 			}
 		}
 
-		if (ui.tabItem("Credits")) {
-			ui.spacing();
-			ui.textColored([0.78, 0.66, 1, 1], MENU_TITLE);
-			ui.separator();
-			ui.spacing();
-			ui.text("Skire  -  Inspiration");
-			ui.text("Astraeus  -  Coding (everything)");
-			ui.spacing();
-			ui.separator();
-			ui.textDisabled("Universal Il2Cpp VR menu");
-			if (DISCORD_URL) { ui.spacing(); if (ui.button("Discord")) ui.openUrl(DISCORD_URL); }
+		if (ui.tabItem("Other Players")) {
+			if (placeholderGate(ui, "Other Players")) {
+				if (ui.section("Players", true)) {
+					ui.listBox("##phplayers", PH.players, PH_PLAYERS, 6);
+					ui.text("Selected: " + PH_PLAYERS[PH.players.v]);
+					if (ui.button("Placeholder Action")) phClick(ui, PH_PLAYERS[PH.players.v]);
+					ui.endSection();
+				}
+			}
 		}
 
 		if (ui.tabItem("Items")) {
 			if (placeholderGate(ui, "Items")) {
-				if (ui.collapsingHeader("Items", true)) {
+				if (ui.section("Items", true)) {
 					ui.listBox("##phitems", PH.item, PH_ITEMS, 8);
 					ui.text("Selected: " + PH_ITEMS[PH.item.v]);
+					ui.endSection();
 				}
-				if (ui.collapsingHeader("Options", true)) {
+				if (ui.section("Options", true)) {
 					ui.sliderFloat("Placeholder Scale", PH.scale, 0.1, 5, 2);
 					ui.sameLine();
 					if (ui.button("Reset##phscale")) PH.scale.v = 1.0;
 					ui.checkbox("Placeholder Toggle 5", PH.toggles[4]);
 					if (ui.button("Use Selected Item")) phClick(ui, PH_ITEMS[PH.item.v]);
+					ui.endSection();
 				}
 			}
 		}
 
 		if (ui.tabItem("Spawning")) {
 			if (placeholderGate(ui, "Spawning")) {
-				if (ui.collapsingHeader("Spawner", true)) {
+				if (ui.section("Spawner", true)) {
 					ui.combo("Placeholder Mode", PH.mode, MODES);
 					ui.sliderInt("Placeholder Amount", PH.count, 1, 20);
 					ui.checkbox("Placeholder Toggle 6", PH.toggles[5]);
 					if (ui.button("Spawn Placeholder")) phClick(ui, "Spawn x" + PH.count.v);
 					ui.sameLine();
 					if (ui.button("Clear Placeholders")) phClick(ui, "Clear");
+					ui.endSection();
 				}
 			}
 		}
 
 		if (ui.tabItem("Soundboard")) ui.soundboardTab();
 
-		if (ui.tabItem("Debug")) ui.debugTab();
-
-		if (ui.tabItem("Plugins")) ui.pluginsTab();
-		if (ui.tabItem("Info")) ui.info();
-		if (ui.tabItem("Settings")) ui.settings();
+		if (ui.tabItem("Settings")) {
+			if (ui.section("Menu", true)) { ui.settings(); ui.endSection(); }
+			if (ui.section("Plugins")) { ui.pluginsTab(); ui.endSection(); }
+			if (ui.section("Debug")) { ui.debugTab(); ui.endSection(); }
+			if (ui.section("Info")) { ui.info(); ui.endSection(); }
+			if (ui.section("Credits")) {
+				ui.textColored([0.78, 0.66, 1, 1], MENU_TITLE);
+				ui.text("Skire  -  Inspiration");
+				ui.text("Astraeus  -  Coding (everything)");
+				ui.textDisabled("Universal Il2Cpp VR menu");
+				if (DISCORD_URL && ui.button("Discord")) ui.openUrl(DISCORD_URL);
+				ui.endSection();
+			}
+		}
 		ui.endTabBar();
 	}
 	ui.end();
@@ -892,7 +905,7 @@ Il2Cpp.perform(() => {
 		},
 		Skire: {
 			Text: [0.92, 0.91, 0.95, 1], TextDisabled: [0.60, 0.57, 0.68, 1], TextOnActive: [1, 1, 1, 1],
-			WindowBg: [0.035, 0.028, 0.055, 0.80], Pattern: [0.72, 0.56, 0.96, 0.70], PopupBg: [0.10, 0.08, 0.15, 0.97], Border: [0.46, 0.41, 0.62, 0.55],
+			WindowBg: [0.035, 0.028, 0.055, 0.80], Pattern: [1, 1, 1, 0.85], PopupBg: [0.10, 0.08, 0.15, 0.97], Border: [0.46, 0.41, 0.62, 0.55],
 			TitleBg: [0.06, 0.05, 0.09, 0.9], TitleBgActive: [0.10, 0.08, 0.15, 0.95],
 			RowBg: [0.36, 0.31, 0.48, 0.30], RowHover: [0.46, 0.40, 0.62, 0.50],
 			FrameBg: [0.36, 0.31, 0.48, 0.62], FrameBgHovered: [0.45, 0.39, 0.60, 0.72], FrameBgActive: [0.53, 0.47, 0.70, 0.80],
@@ -955,8 +968,8 @@ Il2Cpp.perform(() => {
 	};
 	const THEME_NAMES = Object.keys(THEMES);
 	const style = {
-		scale: UI_SCALE * MENU_SIZE / 100, width: WINDOW_WIDTH, titleH: 30, pad: 12, spacingX: 10, spacingY: 6,
-		frameH: 34, framePadX: 14, fontSize: 24, grabW: 18, tabH: 46, tabPadX: 22, itemW: 0.65,
+		scale: UI_SCALE * MENU_SIZE / 100, width: WINDOW_WIDTH, titleH: 30, pad: 12, spacingX: 10, spacingY: 9,
+		frameH: 36, framePadX: 14, fontSize: 24, grabW: 7, tabH: 39, tabPadX: 29, itemW: 0.65,
 		rows: ROW_LAYOUT, rowH: 38, rowGap: 3, labelFrac: 0.42, tabsFill: false, opacity: 1, rounding: ROUNDING,
 		sidebar: SIDEBAR_TABS, sidebarW: SIDEBAR_WIDTH,
 		wrist: WRIST_MENU, onTop: ALWAYS_ON_TOP, stabilize: STABILIZE,
@@ -980,26 +993,53 @@ Il2Cpp.perform(() => {
 	// two-arm archimedean spiral: thin anti-aliased lines with a faint glow, dimmer toward the edges.
 	// Built a few rows per frame (patternStep) so loading never stalls the game. With two arms the
 	// pattern is symmetric under a half turn, so each computed row also fills its mirror row.
-	const PAT_N = 768, PAT_ARMS = 2, PAT_LINES = 34;
+	const PAT_N = 768, PAT_ARMS = 2, PAT_TURNS = 14, PAT_POW = 0.66;
 	let patternBytes: Uint8Array | null = null, patRow = 0;
 	function patternStep(budgetMs: number): boolean {
 		if (patRow >= PAT_N / 2) return true;
 		if (!patternBytes) patternBytes = new Uint8Array(PAT_N * PAT_N * 4);
-		const TAU = Math.PI * 2, spacing = PAT_N / PAT_LINES, px = patternBytes, until = Date.now() + budgetMs;
+		const TAU = Math.PI * 2, half = PAT_N / 2, px = patternBytes, until = Date.now() + budgetMs;
 		do {
 			const j = patRow++, jm = PAT_N - 1 - j, dy = j / (PAT_N - 1) - 0.5;
 			for (let i = 0; i < PAT_N; i++) {
-				const dx = i / (PAT_N - 1) - 0.5, r = Math.sqrt(dx * dx + dy * dy);
-				const ph = r * PAT_LINES + PAT_ARMS * Math.atan2(dy, dx) / TAU;
-				const d = Math.abs(ph - Math.round(ph)) * spacing;
-				const core = Math.min(1, Math.max(0, 1.25 - d)), glow = 0.16 * Math.exp(-(d * d) / 6);
-				const a = Math.min(1, core + glow) * (0.45 + 0.55 * Math.max(0, 1 - r * 1.4)) * Math.min(1, r * 40);
+				const dx = i / (PAT_N - 1) - 0.5, rn = Math.sqrt(dx * dx + dy * dy) * 2;
+				let a = 0, cr = 190, cg = 165, cb = 250;
+				if (rn < 1) {
+					const ph = PAT_TURNS * Math.pow(rn, PAT_POW) + PAT_ARMS * Math.atan2(dy, dx) / TAU;
+					const slope = PAT_TURNS * PAT_POW * Math.pow(Math.max(rn, 0.002), PAT_POW - 1);
+					const dpx = Math.abs(ph - Math.round(ph)) / slope * half;
+					const line = Math.min(1, Math.max(0, 0.85 - dpx) + 0.12 * Math.exp(-(dpx * dpx) / 4));
+					a = line * (0.5 + 0.5 * Math.pow(1 - rn, 0.8)) * Math.min(1, rn * 30) * Math.min(1, (1 - rn) * 12);
+					const t = Math.min(1, rn * 1.6);
+					cr = Math.round(236 + (212 - 236) * t); cg = Math.round(120 + (196 - 120) * t); cb = Math.round(255 + (255 - 255) * t);
+				}
 				const v = Math.min(255, Math.round(a * 255)), o = (j * PAT_N + i) * 4, om = (jm * PAT_N + (PAT_N - 1 - i)) * 4;
-				px[o] = px[o + 1] = px[o + 2] = px[om] = px[om + 1] = px[om + 2] = 255;
+				px[o] = px[om] = cr; px[o + 1] = px[om + 1] = cg; px[o + 2] = px[om + 2] = cb;
 				px[o + 3] = px[om + 3] = v;
 			}
 		} while (patRow < PAT_N / 2 && Date.now() < until);
+		if (patRow >= PAT_N / 2) patternStars(px);
 		return patRow >= PAT_N / 2;
+	}
+	// small soft star dots scattered over the disc (fixed seed, so they're the same every run)
+	function patternStars(px: Uint8Array) {
+		let seed = 1337;
+		const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+		for (let n = 0; n < 110; n++) {
+			const rr = Math.sqrt(rnd()) * 0.47 * PAT_N, th = rnd() * Math.PI * 2;
+			const cx = PAT_N / 2 + Math.cos(th) * rr, cy = PAT_N / 2 + Math.sin(th) * rr;
+			const size = 0.5 + rnd() * 0.8, bright = 0.35 + rnd() * 0.5, tint = rnd() < 0.4;
+			for (let y = Math.floor(cy - size - 1); y <= Math.ceil(cy + size + 1); y++) for (let x = Math.floor(cx - size - 1); x <= Math.ceil(cx + size + 1); x++) {
+				if (x < 0 || y < 0 || x >= PAT_N || y >= PAT_N) continue;
+				const f = Math.max(0, 1 - Math.hypot(x - cx, y - cy) / (size + 0.6)) * bright;
+				if (f <= 0) continue;
+				const o = (y * PAT_N + x) * 4;
+				px[o] = Math.round(px[o] + (255 - px[o]) * f);
+				px[o + 1] = Math.round(px[o + 1] + ((tint ? 200 : 255) - px[o + 1]) * f);
+				px[o + 2] = Math.round(px[o + 2] + (255 - px[o + 2]) * f);
+				px[o + 3] = Math.max(px[o + 3], Math.round(255 * f));
+			}
+		}
 	}
 
 	const CIRC_N = 64;
@@ -1680,8 +1720,7 @@ Il2Cpp.perform(() => {
 		if (b.clicked) openPopup = openPopup === id ? null : id;
 		const isOpen = openPopup === id;
 		RR(fx, fy, fw, fh, isOpen || b.held ? C.FrameBgActive : b.hov ? C.FrameBgHovered : C.FrameBg, L_FRAME);
-		RR(fx + fw - fh, fy, fh, fh, b.hov || isOpen ? C.ButtonHovered : C.Button, L_FILL);
-		T(fx + 8, fy, fw - fh - 8, fh, items[r.v] ?? "", C.Text, ALIGN_LEFT, L_FRAME);
+		T(fx + 10, fy, fw - fh - 10, fh, items[r.v] ?? "", C.Text, ALIGN_LEFT, L_FRAME);
 		const as = arrowSize();
 		arrow(fx + fw - fh + (fh - as) / 2, fy + (fh - as) / 2, as, 0, C.Text);
 
@@ -1759,12 +1798,37 @@ Il2Cpp.perform(() => {
 		if (b.clicked) openHeaders.set(id, !openHeaders.get(id));
 		const isOpen = !!openHeaders.get(id);
 		RR(x, y, fw, fh, b.held ? C.HeaderActive : b.hov ? C.HeaderHovered : C.Header, L_FRAME);
-		const as = arrowSize(), ax = x + style.framePadX * 0.6;
+		const as = arrowSize(), ax = x + Math.round(fh * 0.72), lx = ax + as + Math.round(fh * 0.95);
 		arrow(ax, y + (fh - as) / 2, as, isOpen ? 0 : 1, C.Text);
-		T(ax + as + style.framePadX * 0.6, y, fw - as - style.framePadX * 2, fh, disp, C.Text, ALIGN_LEFT, L_FRAME);
+		T(lx, y, fw - (lx - x) - 8, fh, disp, C.Text, ALIGN_LEFT, L_FRAME);
 		return isOpen;
 	}
-	const treeIndent = () => Math.round(style.fontSize * 0.8125) + 10;
+	// indent guides: thin vertical lines down the left of open sections / tree nodes
+	const guides: { gx: number; y0: number; amount: number }[] = [];
+	function guideLine(g: { gx: number; y0: number }) {
+		if (!cur || measuring) return;
+		const y1 = cur.cy - style.spacingY - (cur.clipOn ? Math.round(cur.scroll) : 0);
+		if (y1 > g.y0 + 2) R(g.gx, g.y0, 1.5, y1 - g.y0, fade(C.Separator, 0.8), L_ROW);
+	}
+	// a collapsing header whose content is indented with a guide line; close with endSection() when it returns true
+	const SECTION_INDENT = () => Math.round(style.frameH * 1.45);
+	function section(label: string, defaultOpen: boolean = false): boolean {
+		const open = collapsingHeader(label, defaultOpen);
+		if (open && cur) {
+			const x = style.pad + cur.indent + (cur.sideOff ?? 0), y = cur.cy - (cur.clipOn ? Math.round(cur.scroll) : 0);
+			const amount = SECTION_INDENT();
+			guides.push({ gx: x + Math.round(amount * 0.62), y0: y - style.spacingY + 2, amount });
+			cur.indent += amount;
+		}
+		return open;
+	}
+	function endSection() {
+		const g = guides.pop();
+		if (!g || !cur) return;
+		guideLine(g);
+		cur.indent = Math.max(0, cur.indent - g.amount);
+	}
+	const treeIndent = () => Math.round(style.frameH * 0.6);
 	function treeNode(label: string, defaultOpen: boolean = false): boolean {
 		const [disp, id] = labelId(label);
 		if (!openHeaders.has(id)) openHeaders.set(id, defaultOpen);
@@ -1775,8 +1839,9 @@ Il2Cpp.perform(() => {
 		if (b.clicked) openHeaders.set(id, !openHeaders.get(id));
 		const isOpen = !!openHeaders.get(id);
 		if (b.hov || b.held) RR(x, y, fullW(), fh, b.held ? C.HeaderActive : C.HeaderHovered, L_FRAME);
-		arrow(x + 2, y + (fh - as) / 2, as, isOpen ? 0 : 1, C.Text);
-		T(x + as + style.spacingX, y, textW(disp) + 8, fh, disp, C.Text, ALIGN_LEFT, L_FRAME);
+		const ax = x + treeIndent();
+		arrow(ax, y + (fh - as) / 2, as, isOpen ? 0 : 1, C.Text);
+		T(ax + as + Math.round(fh * 0.4), y, textW(disp) + 8, fh, disp, C.Text, ALIGN_LEFT, L_FRAME);
 		if (isOpen && cur) cur.indent += treeIndent();
 		return isOpen;
 	}
@@ -3086,12 +3151,38 @@ Il2Cpp.perform(() => {
 		}
 		return pts;
 	}
-	function spiralUVs(pts: number[][], w: number, h: number, angleDeg: number): number[] {
+	const PAT_GX = 28, PAT_GY = 18, LENS_R = 150, LENS_A = 0.55;
+	function patternGrid(w: number, h: number, r: number): { pts: number[][]; tris: number[] } {
+		r = Math.max(0, Math.min(r, w / 2, h / 2));
+		const pts: number[][] = [], tris: number[] = [];
+		for (let j = 0; j <= PAT_GY; j++) for (let i = 0; i <= PAT_GX; i++) {
+			let x = -w / 2 + w * i / PAT_GX, y = h / 2 - h * j / PAT_GY;
+			const ex = w / 2 - r, ey = h / 2 - r;
+			if (r > 0 && Math.abs(x) > ex && Math.abs(y) > ey) {
+				const cx = Math.sign(x) * ex, cy = Math.sign(y) * ey, dx = x - cx, dy = y - cy, d = Math.hypot(dx, dy);
+				if (d > r) { x = cx + dx / d * r; y = cy + dy / d * r; }
+			}
+			pts.push([x, y]);
+		}
+		for (let j = 0; j < PAT_GY; j++) for (let i = 0; i < PAT_GX; i++) {
+			const a = j * (PAT_GX + 1) + i, b = a + PAT_GX + 1;
+			tris.push(a, a + 1, b + 1, a, b + 1, b);
+		}
+		return { pts, tris };
+	}
+	// lens: { x, y } in the same centred, y-up space as the points; s = 0..1 strength
+	function spiralUVs(pts: number[][], w: number, h: number, angleDeg: number, lens?: { x: number; y: number; s: number }): number[] {
 		const cx = w * SPIRAL_CENTER;
 		const R = Math.max(Math.hypot(w / 2 + Math.abs(cx), h / 2), 1);
 		const k = 0.5 / R, a = -angleDeg * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a);
 		const uvs: number[] = [];
-		for (const [x, y] of pts) {
+		const ls = lens && lens.s > 0.01 ? lens.s * LENS_A : 0;
+		for (const p of pts) {
+			let x = p[0], y = p[1];
+			if (ls) {
+				const lx = x - lens!.x, ly = y - lens!.y, d = Math.hypot(lx, ly);
+				if (d < LENS_R) { const f = (1 - d / LENS_R) * (1 - d / LENS_R) * ls; x -= lx * f; y -= ly * f; }
+			}
 			const dx = (x - cx) * k, dy = y * k;
 			uvs.push(0.5 + dx * ca - dy * sa, 0.5 + dx * sa + dy * ca);
 		}
@@ -3132,7 +3223,7 @@ Il2Cpp.perform(() => {
 			if (w.root) { try { destroy(w.root); } catch {} }
 			w.root = w.rootT = w.canvas = w.canvasT = w.pattern = null;
 			w.buckets = []; w.rpool = []; w.tpool = []; w.gpool = []; w.rootOn = false; w.poseDirty = true; w.pattern = null;
-			w.cursorEl = undefined;
+			w.cursorEl = undefined; (w as any).haloEl = undefined;
 		}
 		initShapes();
 	}
@@ -3438,26 +3529,32 @@ Il2Cpp.perform(() => {
 		if (k.mat !== m) { pickOverload(e.cr, CanvasRendererCls, "SetMaterial", 2, ps => ps[1].type.name === "System.Int32").invoke(m, 0); k.mat = m; }
 		const wr = winRadius(), geo = w.W + "x" + w.H + "r" + wr, now = Date.now();
 		const angle = style.spin ? ((now - t0) / 1000 * style.spin) % 360 : 0;
+		// pointer lens: follows the pointer over this window, eases out where it left
+		const over = mouseWin === w && mouseX >= 0 && rt.cursor.v;
+		if (over) { k.lx = mouseX - w.W / 2; k.ly = w.H / 2 - mouseY; }
+		const target = over ? 1 : 0, ls = k.ls ?? 0;
+		const lensS = Math.abs(target - ls) < 0.02 ? target : ls + (target - ls) * 0.22;
+		const lens = lensS > 0.01 ? { x: k.lx, y: k.ly, s: lensS } : undefined;
+		const lensMoved = lensS !== ls || (lens && (k.ulx !== k.lx || k.uly !== k.ly));
 		if (k.geo !== geo || !e.pmesh) {
-			const pts = roundedPolyPoints(w.W, w.H, wr), tris: number[] = [];
-			for (let i = 1; i < pts.length; i++) tris.push(0, i, i === pts.length - 1 ? 1 : i + 1);
+			const grid = patternGrid(w.W, w.H, wr), pts = grid.pts, tris = grid.tris;
 			try {
-				const mesh = buildMesh(pts.flatMap(p => [p[0], p[1], 0]), spiralUVs(pts, w.W, w.H, angle), tris);
+				const mesh = buildMesh(pts.flatMap(p => [p[0], p[1], 0]), spiralUVs(pts, w.W, w.H, angle, lens), tris);
 				if (e.pmesh) destroy(e.pmesh);
 				e.pmesh = mesh; e.ppts = pts; e.ptris = tris;
 				call(e.cr, "SetMesh", mesh);
 				call(e.tr, "set_localPosition", v3(w.W / 2, -w.H / 2, 0));
 				call(e.tr, "set_localScale", v3(1, 1, 1));
-				k.geo = geo; k.angle = angle; k.at = now;
+				k.geo = geo; k.angle = angle; k.at = now; k.ls = lensS; k.ulx = k.lx; k.uly = k.ly;
 			} catch (err) { errOnce("pattern mesh", err); }
-		} else if (style.spin && k.angle !== angle && now - k.at >= 33) {
-			const uvs = spiralUVs(e.ppts, w.W, w.H, angle);
+		} else if (((style.spin && k.angle !== angle) || lensMoved) && now - k.at >= (meshMode === "arrays" ? 33 : 120)) {
+			const uvs = spiralUVs(e.ppts, w.W, w.H, angle, lens);
 			let ok = meshMode === "arrays" && setMeshUVs(e, uvs);
 			if (!ok) {
 				try { const m = buildMesh(e.ppts.flatMap((p: number[]) => [p[0], p[1], 0]), uvs, e.ptris); destroy(e.pmesh); e.pmesh = m; ok = true; }
 				catch (err) { errOnce("spiral rebuild", err); }
 			}
-			if (ok) { call(e.cr, "SetMesh", e.pmesh); k.angle = angle; k.at = now; }
+			if (ok) { call(e.cr, "SetMesh", e.pmesh); k.angle = angle; k.at = now; k.ls = lensS; k.ulx = k.lx; k.uly = k.ly; }
 		}
 		const c = fade(C.Pattern, style.opacity);
 		if (!same4(k.col, c)) { call(e.cr, "SetColor", col(c)); k.col = c; }
@@ -3494,9 +3591,35 @@ Il2Cpp.perform(() => {
 		syncPattern(w);
 		syncCursor(w);
 	}
+	// soft ring around the pointer while it's over the spiral; fades with the spiral's lens
+	const HALO_D = 56;
+	function syncHalo(w: Win, show: boolean) {
+		const pk = w.pattern ? w.pattern.k : null;
+		const s2 = pk && pk.ls ? pk.ls : 0;
+		let e = (w as any).haloEl;
+		const visible = show && s2 > 0.02 && roundOK && !!ringTex && setPattern.v && !(w.flags && w.flags.noBackground);
+		if (!visible) { if (e) setCull(e, true); return; }
+		if (!e) {
+			try {
+				e = (w as any).haloEl = makeRect(w.buckets[B_CURSOR]); e.solo = true;
+				call(e.cr, "SetMesh", roundedMesh(HALO_D, HALO_D, HALO_D / 2).mesh);
+				call(e.cr, "SetTexture", ringTex);
+			} catch (err) { errOnce("halo", err); return; }
+		}
+		setCull(e, false);
+		const k = e.k, m = matFor();
+		if (e.cr && k.mat !== m) { pickOverload(e.cr, CanvasRendererCls, "SetMaterial", 2, ps => ps[1].type.name === "System.Int32").invoke(m, 0); k.mat = m; }
+		const c = fade(C.Accent, 0.6 * s2);
+		if (!same4(k.col, c)) { call(e.cr, "SetColor", col(c)); k.col = c; }
+		const x = Math.round(mouseX * 2) / 2, y = Math.round(mouseY * 2) / 2;
+		if (k.px !== x || k.py !== y) { call(e.tr, "set_localPosition", v3(x, -y, 0)); k.px = x; k.py = y; }
+		const sc = Math.round((0.85 + 0.15 * s2) * 100) / 100;
+		if (k.w !== sc) { call(e.tr, "set_localScale", v3(sc, sc, 1)); k.w = sc; }
+	}
 	function syncCursor(w: Win) {
 		if (!w.root || !w.rootOn) return;
 		const show = rt.cursor.v && mouseWin === w && mouseX >= 0;
+		syncHalo(w, show);
 		let e = w.cursorEl;
 		if (!show) { if (e) setCull(e, true); return; }
 		if (!e) {
@@ -3871,6 +3994,7 @@ Il2Cpp.perform(() => {
 		readFile: (path: string): string | null => { try { return String((File as any).readAllText(path)); } catch { return null; } },
 		writeFile: (path: string, text: string): boolean => { try { (File as any).writeAllText(path, text); return true; } catch (e) { errOnce("write " + path, e); return false; } },
 		close: () => { menuForced = false; menuOpen = false; },
+		section, endSection,
 		progressBar, beginTabBar, tabItem, endTabBar, notice, beginScrollArea, endScrollArea, menuBar, bulletText, textWrapped, radioButton, helpMarker, tooltip, table,
 		io: () => ({ mouseX, mouseY, dx: mouseX >= 0 && lastMouse.x >= 0 ? mouseX - lastMouse.x : 0, dy: mouseY >= 0 && lastMouse.y >= 0 ? mouseY - lastMouse.y : 0,
 			hovering: !!mouseWin, down: io.down, pressed: io.pressed, released: io.released, scroll: io.scroll, clicks: clickCount, open: io.open, pointer: pointerMode, fps }), treeNode, treePop, inputText, listBox, settings, info, notify, confirm, openUrl, style, ref,

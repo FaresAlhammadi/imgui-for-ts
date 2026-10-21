@@ -26,6 +26,9 @@ set "ONLY_TOKEN=nightclub"
 set "ARCH=arm64-v8a"
 set "FRIDA_ABI=arm64"
 set "GADGET=libgadget.so"
+REM  listen = attach from your PC with  frida -U -l ... -l ... Gadget  (no script on device)
+REM  script = gadget auto-runs SCRIPT_DEV_PATH on the device (push agent.js there)
+set "GADGET_MODE=listen"
 set "SCRIPT_DEV_PATH=/data/local/tmp/fridaimgui_ncs.js"
 set "BRIDGE_JS=frida-il2cpp-bridge.js"
 set "MENU_TS=fridaimgui_ncs.ts"
@@ -145,8 +148,8 @@ echo [*] Will patch: %TARGET%
 
 REM ---- drop the gadget + its config next to the libs ------------------------
 copy /y "%GADGET_SO%" "%LIBDIR%\%GADGET%" >nul || ( echo [X] couldn't copy gadget. & goto :fail )
-python -c "import json;open(r'%LIBDIR%\libgadget.config.so','w').write(json.dumps({'interaction':{'type':'script','path':r'%SCRIPT_DEV_PATH%','on_change':'reload'}}))" || ( echo [X] couldn't write gadget config. & goto :fail )
-echo [*] Gadget + config placed in lib\%ARCH%.
+python -c "import json,sys;m=sys.argv[1];cfg={'interaction':{'type':'listen'}} if m=='listen' else {'interaction':{'type':'script','path':sys.argv[2],'on_change':'reload'}};open(r'%LIBDIR%\libgadget.config.so','w').write(json.dumps(cfg))" "%GADGET_MODE%" "%SCRIPT_DEV_PATH%" || ( echo [X] couldn't write gadget config. & goto :fail )
+echo [*] Gadget + config placed in lib\%ARCH% ^(mode: %GADGET_MODE%^).
 
 REM ---- patch the target lib to load the gadget (adds a DT_NEEDED entry) ------
 echo [*] Patching %TARGET% to load %GADGET%...
@@ -178,32 +181,35 @@ if exist "%OUT%" del /q "%OUT%"
 ren "%UNSIGNED%" "%OUT%" 2>nul
 
 set "OBBDIR=/sdcard/Android/obb/!PKG!"
+set "LISTEN="
+if /i "%GADGET_MODE%"=="listen" set "LISTEN=1"
 echo.
 echo  ===== DONE =====
 echo   Patched apk : %OUT%
-if exist "agent.js"  echo   Agent script: agent.js  (push to %SCRIPT_DEV_PATH%)
-if defined OBB       echo   OBB         : !OBB!  (push to !OBBDIR!/)
+if defined OBB       echo   OBB         : !OBB!
+if not defined LISTEN if exist "agent.js" echo   Agent script: agent.js
 echo.
-echo  Full install (run these yourself, or let the prompt below do it):
-echo    adb uninstall !PKG!          ^(signature differs from the store build^)
+echo  Install on the headset:
+echo    adb uninstall !PKG!
 echo    adb install "%OUT%"
 if defined OBB (
   echo    adb shell mkdir -p !OBBDIR!
   echo    adb push "!OBB!" !OBBDIR!/!OBB!
 )
-if exist "agent.js" (
-  echo    adb push agent.js %SCRIPT_DEV_PATH%
+if defined LISTEN (
+  echo  Then launch the game and attach from this PC:
+  echo    frida -U -l %BRIDGE_JS% -l %MENU_TS% Gadget
+  echo  ^(re-run that command to reload the menu after editing it^)
 ) else (
-  echo    REM compile your menu first ^(see below^), then:  adb push agent.js %SCRIPT_DEV_PATH%
+  echo    adb push agent.js %SCRIPT_DEV_PATH%
+  echo  Launch the game - the gadget auto-runs the script; re-push it to reload.
 )
-echo  Launch the game - the gadget auto-runs the script; editing it on the PC and
-echo  re-pushing reloads it live ^("on_change":"reload"^).
 echo.
 
-REM ---- offer to do the whole device install if adb is attached --------------
+REM ---- offer to do the device install if adb is attached --------------------
 where adb >nul 2>&1 || goto :noadb
 echo.
-choice /c YN /m "Install apk + push OBB + script to the headset now"
+choice /c YN /m "Install apk + push OBB to the headset now"
 if errorlevel 2 goto :noadb
 echo [*] Uninstalling old build...
 adb uninstall !PKG!
@@ -211,8 +217,9 @@ echo [*] Installing patched apk...
 adb install "%OUT%"
 if defined OBB adb shell mkdir -p "!OBBDIR!"
 if defined OBB adb push "!OBB!" "!OBBDIR!/!OBB!"
-if exist "agent.js" adb push agent.js %SCRIPT_DEV_PATH%
+if not defined LISTEN if exist "agent.js" adb push agent.js %SCRIPT_DEV_PATH%
 echo [*] Done - launch Nightclub Simulator on the headset.
+if defined LISTEN echo [*] Then attach:  frida -U -l %BRIDGE_JS% -l %MENU_TS% Gadget
 :noadb
 
 echo.

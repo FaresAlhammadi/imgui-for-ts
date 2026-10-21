@@ -84,11 +84,11 @@ echo [*] Package: !PKG!
 REM ---- prerequisites --------------------------------------------------------
 where java   >nul 2>&1 || ( echo [X] Java not found on PATH. Install a JDK/JRE.        & goto :fail )
 where python >nul 2>&1 || ( echo [X] Python not found on PATH. Install Python 3.        & goto :fail )
-where curl   >nul 2>&1 || ( echo [X] curl not found (needs Windows 10 1803+).           & goto :fail )
+where curl   >nul 2>&1 || ( echo [X] curl not found - needs Windows 10 1803 or newer.   & goto :fail )
 
 python -c "import lief" 1>nul 2>nul
 if errorlevel 1 (
-  echo [*] Installing LIEF (one time)...
+  echo [*] Installing LIEF, one time...
   python -m pip install --quiet --upgrade lief || ( echo [X] pip install lief failed. & goto :fail )
 )
 
@@ -114,7 +114,7 @@ REM ---- download + decompress Frida Gadget -----------------------------------
 set "GADGET_XZ=%TOOLS%\%GADGET%.xz"
 set "GADGET_SO=%TOOLS%\%GADGET%"
 if not exist "%GADGET_SO%" (
-  echo [*] Downloading latest Frida Gadget (android-%FRIDA_ABI%)...
+  echo [*] Downloading latest Frida Gadget - android-%FRIDA_ABI%...
   %PS% "[Net.ServicePointManager]::SecurityProtocol='Tls12'; $a=(Invoke-RestMethod 'https://api.github.com/repos/frida/frida/releases/latest').assets | Where-Object { $_.name -like '*-android-%FRIDA_ABI%.so.xz' } | Select-Object -First 1; if(-not $a){ throw 'gadget asset not found' }; Write-Host ('    ' + $a.name); Invoke-WebRequest $a.browser_download_url -OutFile '%GADGET_XZ%'"
   if errorlevel 1 ( echo [X] gadget download failed. & goto :fail )
   echo [*] Decompressing gadget...
@@ -138,19 +138,19 @@ for %%L in (%LIB_CANDIDATES%) do (
   if not defined TARGET if exist "%LIBDIR%\%%L" set "TARGET=%%L"
 )
 if not defined TARGET (
-  echo [X] None of (%LIB_CANDIDATES%) found in lib\%ARCH%.
+  echo [X] No target lib in lib\%ARCH% - looked for %LIB_CANDIDATES%.
   goto :fail
 )
 echo [*] Will patch: %TARGET%
 
 REM ---- drop the gadget + its config next to the libs ------------------------
 copy /y "%GADGET_SO%" "%LIBDIR%\%GADGET%" >nul || ( echo [X] couldn't copy gadget. & goto :fail )
-python -c "open(r'%LIBDIR%\libgadget.config.so','w').write('{\"interaction\":{\"type\":\"script\",\"path\":\"%SCRIPT_DEV_PATH%\",\"on_change\":\"reload\"}}')" || ( echo [X] couldn't write gadget config. & goto :fail )
+python -c "import json;open(r'%LIBDIR%\libgadget.config.so','w').write(json.dumps({'interaction':{'type':'script','path':r'%SCRIPT_DEV_PATH%','on_change':'reload'}}))" || ( echo [X] couldn't write gadget config. & goto :fail )
 echo [*] Gadget + config placed in lib\%ARCH%.
 
 REM ---- patch the target lib to load the gadget (adds a DT_NEEDED entry) ------
 echo [*] Patching %TARGET% to load %GADGET%...
-python -c "import lief;p=r'%LIBDIR%\%TARGET%';b=lief.parse(p);[b.add_library('%GADGET%') for _ in [0] if '%GADGET%' not in [x.name for x in b.libraries]];b.write(p)" || ( echo [X] LIEF patch failed. & goto :fail )
+python -c "import lief;p=r'%LIBDIR%\%TARGET%';b=lief.parse(p);('%GADGET%' in list(b.libraries)) or b.add_library('%GADGET%');b.write(p)" || ( echo [X] LIEF patch failed. & goto :fail )
 
 REM ---- optional: compile the menu TS, then build the combined agent.js ------
 if not exist "%MENU_JS%" if exist "%MENU_TS%" (
@@ -160,7 +160,7 @@ if not exist "%MENU_JS%" if exist "%MENU_TS%" (
   )
 )
 if exist "%BRIDGE_JS%" if exist "%MENU_JS%" (
-  echo [*] Building agent.js (%BRIDGE_JS% + %MENU_JS%)...
+  echo [*] Building agent.js from %BRIDGE_JS% + %MENU_JS%...
   copy /b /y "%BRIDGE_JS%" + "%MENU_JS%" "agent.js" >nul
 )
 
@@ -201,25 +201,19 @@ echo  re-pushing reloads it live ^("on_change":"reload"^).
 echo.
 
 REM ---- offer to do the whole device install if adb is attached --------------
-where adb >nul 2>&1 && (
-  echo( & choice /c YN /m "Install apk + push OBB + script to the headset now"
-  if not errorlevel 2 (
-    echo [*] Uninstalling old build...
-    adb uninstall !PKG!
-    echo [*] Installing patched apk...
-    adb install "%OUT%"
-    if defined OBB (
-      echo [*] Pushing OBB ^(this is ~1.9 GB, give it a minute^)...
-      adb shell mkdir -p "!OBBDIR!"
-      adb push "!OBB!" "!OBBDIR!/!OBB!"
-    )
-    if exist "agent.js" (
-      echo [*] Pushing agent script...
-      adb push agent.js %SCRIPT_DEV_PATH%
-    )
-    echo [*] Done - launch Nightclub Simulator on the headset.
-  )
-)
+where adb >nul 2>&1 || goto :noadb
+echo.
+choice /c YN /m "Install apk + push OBB + script to the headset now"
+if errorlevel 2 goto :noadb
+echo [*] Uninstalling old build...
+adb uninstall !PKG!
+echo [*] Installing patched apk...
+adb install "%OUT%"
+if defined OBB adb shell mkdir -p "!OBBDIR!"
+if defined OBB adb push "!OBB!" "!OBBDIR!/!OBB!"
+if exist "agent.js" adb push agent.js %SCRIPT_DEV_PATH%
+echo [*] Done - launch Nightclub Simulator on the headset.
+:noadb
 
 echo.
 pause

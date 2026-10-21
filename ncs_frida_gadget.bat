@@ -12,7 +12,10 @@ REM    3. unpack the apk, drop libgadget.so into lib\arm64-v8a
 REM    4. patch libmain.so to load libgadget.so (DT_NEEDED, via LIEF)
 REM    5. write a gadget config that auto-runs your script
 REM    6. repack and sign -> <name>-patched.apk
+REM    7. (OBB method) on install, also push the game's .obb to
+REM       /sdcard/Android/obb/<package>/ so NCS loads its assets
 REM
+REM  Keep the game's main.*.obb in this same folder.
 REM  Needs on PATH: java, python, curl (Win10 1803+ has curl). LIEF is pip-installed.
 REM  No root needed - this is Frida Gadget, for your own single-player modding.
 REM ============================================================================
@@ -25,7 +28,9 @@ set "FRIDA_ABI=arm64"
 set "GADGET=libgadget.so"
 set "SCRIPT_DEV_PATH=/data/local/tmp/fridaimgui_ncs.js"
 set "BRIDGE_JS=frida-il2cpp-bridge.js"
+set "MENU_TS=fridaimgui_ncs.ts"
 set "MENU_JS=fridaimgui_ncs.js"
+set "PKG=com.mandegames.NightClubSimulater"
 set "WORK=_gadget_work"
 set "TOOLS=_gadget_tools"
 set "PS=powershell -NoProfile -ExecutionPolicy Bypass -Command"
@@ -59,6 +64,22 @@ if errorlevel 1 (
   goto :fail
 )
 echo [*] Verified: Nightclub Simulator.
+
+REM ---- find the OBB and take the package name from its filename --------------
+REM  OBB name is  main.<versioncode>.<package>.obb  -> the package is pushed to
+REM  /sdcard/Android/obb/<package>/ so the game finds its 1.9 GB of assets.
+set "OBB="
+for %%O in (*.obb) do if not defined OBB set "OBB=%%~nxO"
+if not defined OBB (
+  echo [!] WARNING: no .obb in this folder. NCS will NOT load without it.
+  echo     Put  main.214.%PKG%.obb  here so it gets pushed to the headset too.
+) else (
+  echo [*] OBB:  !OBB!
+  echo !OBB! | findstr /i "nightclub" >nul || echo [!] That OBB name doesn't look like Nightclub Simulator.
+  for /f "tokens=1,2,* delims=." %%a in ("!OBB!") do set "OBBPKG=%%c"
+  if defined OBBPKG set "PKG=!OBBPKG:.obb=!"
+)
+echo [*] Package: !PKG!
 
 REM ---- prerequisites --------------------------------------------------------
 where java   >nul 2>&1 || ( echo [X] Java not found on PATH. Install a JDK/JRE.        & goto :fail )
@@ -131,7 +152,13 @@ REM ---- patch the target lib to load the gadget (adds a DT_NEEDED entry) ------
 echo [*] Patching %TARGET% to load %GADGET%...
 python -c "import lief;p=r'%LIBDIR%\%TARGET%';b=lief.parse(p);[b.add_library('%GADGET%') for _ in [0] if '%GADGET%' not in [x.name for x in b.libraries]];b.write(p)" || ( echo [X] LIEF patch failed. & goto :fail )
 
-REM ---- optional: build the combined agent.js to push to the device ----------
+REM ---- optional: compile the menu TS, then build the combined agent.js ------
+if not exist "%MENU_JS%" if exist "%MENU_TS%" (
+  where tsc >nul 2>&1 && (
+    echo [*] Compiling %MENU_TS% -^> %MENU_JS% ^(type warnings are harmless^)...
+    tsc "%MENU_TS%" --target es2020 --lib es2020 1>nul 2>nul
+  )
+)
 if exist "%BRIDGE_JS%" if exist "%MENU_JS%" (
   echo [*] Building agent.js (%BRIDGE_JS% + %MENU_JS%)...
   copy /b /y "%BRIDGE_JS%" + "%MENU_JS%" "agent.js" >nul
@@ -150,30 +177,47 @@ set "OUT=%BASE%-patched.apk"
 if exist "%OUT%" del /q "%OUT%"
 ren "%UNSIGNED%" "%OUT%" 2>nul
 
+set "OBBDIR=/sdcard/Android/obb/!PKG!"
 echo.
 echo  ===== DONE =====
 echo   Patched apk : %OUT%
-if exist "agent.js" echo   Agent script: agent.js  (push this to the device)
+if exist "agent.js"  echo   Agent script: agent.js  (push to %SCRIPT_DEV_PATH%)
+if defined OBB       echo   OBB         : !OBB!  (push to !OBBDIR!/)
 echo.
-echo  Install it:
-echo    adb uninstall ^<the game's package name^>      ^(signature differs from the store build^)
+echo  Full install (run these yourself, or let the prompt below do it):
+echo    adb uninstall !PKG!          ^(signature differs from the store build^)
 echo    adb install "%OUT%"
+if defined OBB (
+  echo    adb shell mkdir -p !OBBDIR!
+  echo    adb push "!OBB!" !OBBDIR!/!OBB!
+)
 if exist "agent.js" (
   echo    adb push agent.js %SCRIPT_DEV_PATH%
 ) else (
-  echo    REM build your agent, then:  adb push ^<agent^>.js %SCRIPT_DEV_PATH%
-  echo    REM   ^(the gadget runs ONE combined .js; concat the il2cpp bridge + your compiled menu^)
+  echo    REM compile your menu first ^(see below^), then:  adb push agent.js %SCRIPT_DEV_PATH%
 )
 echo  Launch the game - the gadget auto-runs the script; editing it on the PC and
 echo  re-pushing reloads it live ^("on_change":"reload"^).
 echo.
 
-REM ---- offer to install if a device is attached -----------------------------
+REM ---- offer to do the whole device install if adb is attached --------------
 where adb >nul 2>&1 && (
-  echo( & choice /c YN /m "Install the patched apk now (adb)"
+  echo( & choice /c YN /m "Install apk + push OBB + script to the headset now"
   if not errorlevel 2 (
-    adb install -r "%OUT%"
-    if exist "agent.js" adb push agent.js %SCRIPT_DEV_PATH%
+    echo [*] Uninstalling old build...
+    adb uninstall !PKG!
+    echo [*] Installing patched apk...
+    adb install "%OUT%"
+    if defined OBB (
+      echo [*] Pushing OBB ^(this is ~1.9 GB, give it a minute^)...
+      adb shell mkdir -p "!OBBDIR!"
+      adb push "!OBB!" "!OBBDIR!/!OBB!"
+    )
+    if exist "agent.js" (
+      echo [*] Pushing agent script...
+      adb push agent.js %SCRIPT_DEV_PATH%
+    )
+    echo [*] Done - launch Nightclub Simulator on the headset.
   )
 )
 

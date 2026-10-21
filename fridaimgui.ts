@@ -891,7 +891,7 @@ Il2Cpp.perform(() => {
 			ListRow: [0.16, 0.29, 0.48, 0.30], ListRowAlt: [0.16, 0.29, 0.48, 0.45], NoticeTitle: [1, 0.80, 0.40, 1], NoticeBorder: [1, 0.78, 0.40, 0.75],
 		},
 		Skire: {
-			Text: [0.92, 0.91, 0.95, 1], TextDisabled: [0.60, 0.57, 0.68, 1], TextOnActive: [1, 1, 1, 1],
+			Text: [0.92, 0.91, 0.95, 1], TextDisabled: [0.60, 0.57, 0.68, 1], TextOnActive: [0.84, 0.74, 1, 1], HeaderText: [0.80, 0.68, 1, 1],
 			WindowBg: [0.035, 0.028, 0.055, 0.80], Pattern: [1, 1, 1, 0.85], PopupBg: [0.10, 0.08, 0.15, 0.97], Border: [0.46, 0.41, 0.62, 0.55],
 			TitleBg: [0.06, 0.05, 0.09, 0.9], TitleBgActive: [0.10, 0.08, 0.15, 0.95],
 			RowBg: [0.36, 0.31, 0.48, 0.30], RowHover: [0.46, 0.40, 0.62, 0.50],
@@ -905,7 +905,7 @@ Il2Cpp.perform(() => {
 			Grip: [0.56, 0.50, 0.72, 0.35], GripHovered: [0.62, 0.57, 0.80, 0.7], GripActive: [0.72, 0.66, 0.90, 0.95],
 			ModalDim: [0.02, 0.01, 0.04, 0.6], Discord: [0.35, 0.4, 0.95, 0.9], DiscordHovered: [0.45, 0.5, 1, 1],
 			ListRow: [0.36, 0.31, 0.48, 0.42], ListRowAlt: [0.44, 0.39, 0.58, 0.42],
-			NoticeTitle: [1, 0.80, 0.40, 1], NoticeBorder: [1, 0.78, 0.40, 0.75],
+			NoticeTitle: [1, 0.80, 0.40, 1], NoticeBorder: [1, 0.78, 0.40, 0.75], TabOverline: [0.80, 0.74, 0.96, 1],
 		},
 		Purple: {
 			Text: [0.86, 0.83, 0.95, 1], TextDisabled: [0.62, 0.58, 0.75, 0.85], TextOnActive: [1, 1, 1, 1],
@@ -955,8 +955,8 @@ Il2Cpp.perform(() => {
 	};
 	const THEME_NAMES = Object.keys(THEMES);
 	const style = {
-		scale: UI_SCALE * MENU_SIZE / 100, width: WINDOW_WIDTH, titleH: 30, pad: 12, spacingX: 10, spacingY: 9,
-		frameH: 36, framePadX: 14, fontSize: 24, grabW: 7, tabH: 39, tabPadX: 29, itemW: 0.65,
+		scale: UI_SCALE * MENU_SIZE / 100, width: WINDOW_WIDTH, titleH: 30, pad: 14, spacingX: 10, spacingY: 8,
+		frameH: 38, framePadX: 14, fontSize: 24, grabW: 7, tabH: 59, tabPadX: 28, itemW: 0.636,
 		rows: ROW_LAYOUT, rowH: 38, rowGap: 3, labelFrac: 0.42, tabsFill: false, opacity: 1, rounding: ROUNDING,
 		sidebar: SIDEBAR_TABS, sidebarW: SIDEBAR_WIDTH,
 		wrist: WRIST_MENU, onTop: ALWAYS_ON_TOP, stabilize: STABILIZE,
@@ -1378,6 +1378,10 @@ Il2Cpp.perform(() => {
 		const i = label.indexOf("##");
 		return [i >= 0 ? label.slice(0, i) : label, (cur ? cur.title : "") + "/" + label];
 	}
+	function itemWidth(): number {
+		if (!cur) return 80;
+		return Math.max(80, Math.min(Math.round(cur.W * style.itemW), fullW() - 40));
+	}
 	function fullW(): number {
 		if (!cur) return 0;
 		const side = (cur.sideOff ?? 0);
@@ -1521,12 +1525,14 @@ Il2Cpp.perform(() => {
 		}
 		const focused = mouseWin === w || dragWin === w;
 		const fpsLine = TITLE_FPS && w.order === 0 && !w.collapsed;
+		const cellH = Math.round(14 * style.fontSize / 16);
 		if (classic) {
-			T(style.pad, 2, w.W - style.pad * 2 - closeW, th - 2, title, C.Text, ALIGN_LEFT, L_FRAME);
+			const tTop = Math.round(cellH * 0.857), fTop = tTop + Math.round(cellH * 1.43);
+			T(style.pad + 3, tTop, w.W - style.pad * 2 - closeW, cellH, title, C.Text, ALIGN_LEFT, L_FRAME);
 			if (fpsLine) {
 				const now = Date.now();
 				if (now - menuFpsAt >= 500) { menuFpsAt = now; menuFps = fps; }
-				T(style.pad, th - 4, 400, lineH(), "FPS: " + menuFps.toFixed(1), C.Text, ALIGN_LEFT, L_FRAME);
+				T(style.pad + 3, fTop, 400, cellH, "FPS: " + menuFps.toFixed(1), C.Text, ALIGN_LEFT, L_FRAME);
 			}
 		} else {
 			RR(0, 0, w.W, th, focused ? C.TitleBgActive : C.TitleBg, L_FRAME, 2, w.collapsed ? ALL_CORNERS : TOP_CORNERS);
@@ -1558,7 +1564,7 @@ Il2Cpp.perform(() => {
 		}
 
 		const fpsPad = fpsLine ? (classic ? lineH() - 4 : 16) : 0;
-		w.cy = th + fpsPad + style.pad; w.rowY = w.cy; w.rowH = 0; w.sameLine = false; w.indent = 0; w.lastX = 0; w.lastW = 0;
+		w.cy = classic ? Math.round(cellH * 0.857) + Math.round(cellH * (fpsLine ? 1.24 + 1.62 : 1.62)) : th + fpsPad + style.pad; w.rowY = w.cy; w.rowH = 0; w.sameLine = false; w.indent = 0; w.lastX = 0; w.lastW = 0;
 		return !w.collapsed;
 	}
 
@@ -1649,7 +1655,7 @@ Il2Cpp.perform(() => {
 			if (desc) T(bx + bs + 10, rw.y, rw.cw - bs - 10, rw.h, desc, C.TextDisabled, ALIGN_LEFT, L_FRAME);
 			return rw.b.clicked;
 		}
-		const sz = style.frameH, lw = textW(disp), gap = style.spacingX;
+		const sz = style.frameH, lw = textW(disp), gap = Math.round(style.frameH * 0.22);
 		const [x, y] = item(sz + gap + lw, sz);
 		const b = behavior(id, x, y, sz + gap + lw, sz);
 		if (b.clicked) r.v = !r.v;
@@ -1668,7 +1674,7 @@ Il2Cpp.perform(() => {
 			fx = rw.cx; fw = rw.cw; fh = style.frameH - 4; fy = rw.y + (rw.h - fh) / 2;
 			hy = rw.y; hh = rw.h;
 		} else {
-			fw = Math.max(80, Math.floor(fullW() * style.itemW)); fh = style.frameH;
+			fw = itemWidth(); fh = style.frameH;
 			[fx, fy] = item(fw + style.spacingX + textW(disp), fh);
 			hy = fy; hh = fh;
 			T(fx + fw + style.spacingX, fy, textW(disp), fh, disp, C.Text, ALIGN_LEFT, L_FRAME);
@@ -1699,7 +1705,7 @@ Il2Cpp.perform(() => {
 			const rw = row(id, disp, true);
 			fx = rw.cx; fw = rw.cw; fh = style.frameH - 4; fy = rw.y + (rw.h - fh) / 2; b = rw.b; popY = rw.y + rw.h;
 		} else {
-			fw = Math.max(80, Math.floor(fullW() * style.itemW)); fh = style.frameH;
+			fw = itemWidth(); fh = style.frameH;
 			[fx, fy] = item(fw + style.spacingX + textW(disp), fh);
 			b = behavior(id, fx, fy, fw, fh); popY = fy + fh + 2;
 			T(fx + fw + style.spacingX, fy, textW(disp), fh, disp, C.Text, ALIGN_LEFT, L_FRAME);
@@ -1780,14 +1786,15 @@ Il2Cpp.perform(() => {
 		const [disp, id] = labelId(label);
 		if (!openHeaders.has(id)) openHeaders.set(id, defaultOpen);
 		const fw = fullW(), fh = style.rows ? style.rowH : style.frameH;
-		const [x, y] = item(fw, fh, style.rows ? style.rowGap : style.spacingY);
-		const b = behavior(id, x, y, fw, fh);
+		const [x0, y] = item(fw, fh, style.rows ? style.rowGap : style.spacingY + 4);
+		const x = x0 - style.pad / 2, hw = fw + style.pad;
+		const b = behavior(id, x, y, hw, fh);
 		if (b.clicked) openHeaders.set(id, !openHeaders.get(id));
 		const isOpen = !!openHeaders.get(id);
-		RR(x, y, fw, fh, b.held ? C.HeaderActive : b.hov ? C.HeaderHovered : C.Header, L_FRAME);
-		const as = arrowSize(), ax = x + Math.round(fh * 0.72), lx = ax + as + Math.round(fh * 0.95);
-		arrow(ax, y + (fh - as) / 2, as, isOpen ? 0 : 1, C.Text);
-		T(lx, y, fw - (lx - x) - 8, fh, disp, C.Text, ALIGN_LEFT, L_FRAME);
+		RR(x, y, hw, fh, b.held ? C.HeaderActive : b.hov ? C.HeaderHovered : C.Header, L_FRAME);
+		const as = Math.round(style.fontSize * 0.6), ax = x + Math.round(fh * 0.74), lx = x + Math.round(fh * 1.95);
+		arrow(ax, y + (fh - as) / 2, as, isOpen ? 0 : 1, C.HeaderText ?? C.Text);
+		T(lx, y, hw - (lx - x) - 8, fh, disp, C.HeaderText ?? C.Text, ALIGN_LEFT, L_FRAME);
 		return isOpen;
 	}
 	// indent guides: thin vertical lines down the left of open sections / tree nodes
@@ -1798,13 +1805,13 @@ Il2Cpp.perform(() => {
 		if (y1 > g.y0 + 2) R(g.gx, g.y0, 1.5, y1 - g.y0, fade(C.Separator, 0.8), L_ROW);
 	}
 	// a collapsing header whose content is indented with a guide line; close with endSection() when it returns true
-	const SECTION_INDENT = () => Math.round(style.frameH * 1.45);
+	const SECTION_INDENT = () => Math.round(style.frameH * 1.28);
 	function section(label: string, defaultOpen: boolean = false): boolean {
 		const open = collapsingHeader(label, defaultOpen);
 		if (open && cur) {
 			const x = style.pad + cur.indent + (cur.sideOff ?? 0), y = cur.cy - (cur.clipOn ? Math.round(cur.scroll) : 0);
 			const amount = SECTION_INDENT();
-			guides.push({ gx: x + Math.round(amount * 0.62), y0: y - style.spacingY + 2, amount });
+			guides.push({ gx: x + Math.round(amount * 0.70), y0: y - style.spacingY, amount });
 			cur.indent += amount;
 		}
 		return open;
@@ -1815,20 +1822,20 @@ Il2Cpp.perform(() => {
 		guideLine(g);
 		cur.indent = Math.max(0, cur.indent - g.amount);
 	}
-	const treeIndent = () => Math.round(style.frameH * 0.6);
+	const treeIndent = () => Math.round(style.frameH * 0.54);
 	function treeNode(label: string, defaultOpen: boolean = false): boolean {
 		const [disp, id] = labelId(label);
 		if (!openHeaders.has(id)) openHeaders.set(id, defaultOpen);
-		const fh = style.frameH, as = arrowSize();
+		const fh = Math.round(14 * style.fontSize / 16), as = Math.round(style.fontSize * 0.42);
 		const tw = as + style.spacingX + textW(disp) + 8;
 		const [x, y] = item(tw, fh, style.rows ? style.rowGap : style.spacingY);
 		const b = behavior(id, x, y, Math.max(tw, fullW() * 0.5), fh);
 		if (b.clicked) openHeaders.set(id, !openHeaders.get(id));
 		const isOpen = !!openHeaders.get(id);
 		if (b.hov || b.held) RR(x, y, fullW(), fh, b.held ? C.HeaderActive : C.HeaderHovered, L_FRAME);
-		const ax = x + treeIndent();
+		const ax = x + Math.round(style.frameH * 0.55);
 		arrow(ax, y + (fh - as) / 2, as, isOpen ? 0 : 1, C.Text);
-		T(ax + as + Math.round(fh * 0.4), y, textW(disp) + 8, fh, disp, C.Text, ALIGN_LEFT, L_FRAME);
+		T(x + Math.round(style.frameH * 1.33), y, textW(disp) + 8, fh, disp, C.Text, ALIGN_LEFT, L_FRAME);
 		if (isOpen && cur) cur.indent += treeIndent();
 		return isOpen;
 	}
@@ -1863,7 +1870,7 @@ Il2Cpp.perform(() => {
 			const rw = row(id, disp, true);
 			fx = rw.cx; fw = rw.cw; fh = style.frameH - 4; fy = rw.y + (rw.h - fh) / 2; b = rw.b;
 		} else {
-			fw = Math.max(80, Math.floor(fullW() * style.itemW)); fh = style.frameH;
+			fw = itemWidth(); fh = style.frameH;
 			[fx, fy] = item(fw + (disp ? style.spacingX + textW(disp) : 0), fh);
 			b = behavior(id, fx, fy, fw, fh);
 			if (disp) T(fx + fw + style.spacingX, fy, textW(disp), fh, disp, C.Text, ALIGN_LEFT, L_FRAME);
@@ -2109,7 +2116,12 @@ Il2Cpp.perform(() => {
 			const b = behavior(tid, x, bar.y, tw, bar.h);
 			if (b.clicked) tabNext.set(bar.id, tid);
 			R(x, bar.y, tw, bar.h, sel ? C.TabActive : b.hov ? C.TabHovered : C.Tab, L_FRAME, 0, ends ? TAB_ROUNDING : 0, ends);
-			T(x, bar.y, tw, bar.h, disp, sel ? C.TextOnActive : C.Text, ALIGN_CENTER, L_FRAME);
+			const cellH = Math.round(14 * style.fontSize / 16);
+			T(x, bar.y + Math.round(bar.h * 0.568 - cellH / 2), tw, cellH, disp, sel ? C.TextOnActive : C.Text, ALIGN_CENTER, L_FRAME);
+			if (sel) {
+				const inset = ends ? TAB_ROUNDING * 0.6 : 0;
+				R(x + ((ends & 1) ? inset : 0), bar.y, tw - ((ends & 1) ? inset : 0) - ((ends & 2) ? inset : 0), 1.5, C.TabOverline ?? C.Accent, L_FILL);
+			}
 		}
 		win.clipOn = clip;
 		return sel;
@@ -2260,6 +2272,10 @@ Il2Cpp.perform(() => {
 				const clipWas = win.clipOn;
 				win.clipOn = false;
 				if (bar.scrolling) drawTabArrows(bar.id, bar.y, bar.h, bar.first!, bar.last!, bar.n);
+				else {
+					const x1 = win.W - style.pad - (win.sbVisible ? 14 : 0) + style.pad / 2;
+					if (x1 > bar.nx + 4) R(bar.nx, bar.y + 1, x1 - bar.nx, 1.5, fade(C.Separator, 0.9), L_FRAME);
+				}
 				win.clipOn = clipWas;
 			}
 			if (win.clipOn) {

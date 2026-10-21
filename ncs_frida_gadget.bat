@@ -1,0 +1,189 @@
+@echo off
+setlocal EnableDelayedExpansion
+title Frida Gadget injector
+
+REM ============================================================================
+REM  ncs_frida_gadget.bat
+REM  Nightclub Simulator ONLY - this injector refuses to run on any other apk.
+REM  Drop it next to the NightclubSimulater .apk and run it. It will:
+REM    1. find the .apk in this folder and verify it IS Nightclub Simulator
+REM    2. download apktool, uber-apk-signer and the latest Frida Gadget (arm64)
+REM    3. unpack the apk, drop libgadget.so into lib\arm64-v8a
+REM    4. patch libmain.so to load libgadget.so (DT_NEEDED, via LIEF)
+REM    5. write a gadget config that auto-runs your script
+REM    6. repack and sign -> <name>-patched.apk
+REM
+REM  Needs on PATH: java, python, curl (Win10 1803+ has curl). LIEF is pip-installed.
+REM  No root needed - this is Frida Gadget, for your own single-player modding.
+REM ============================================================================
+
+REM ---- settings -------------------------------------------------------------
+REM  Only an apk whose manifest contains this token is accepted (keeps it NCS-only).
+set "ONLY_TOKEN=nightclub"
+set "ARCH=arm64-v8a"
+set "FRIDA_ABI=arm64"
+set "GADGET=libgadget.so"
+set "SCRIPT_DEV_PATH=/data/local/tmp/fridaimgui_ncs.js"
+set "BRIDGE_JS=frida-il2cpp-bridge.js"
+set "MENU_JS=fridaimgui_ncs.js"
+set "WORK=_gadget_work"
+set "TOOLS=_gadget_tools"
+set "PS=powershell -NoProfile -ExecutionPolicy Bypass -Command"
+REM libs to try patching, in order (first one present wins)
+set "LIB_CANDIDATES=libmain.so libil2cpp.so libunity.so"
+
+echo.
+echo  ===== Frida Gadget APK injector =====
+echo.
+
+REM ---- find the apk ---------------------------------------------------------
+set "APK="
+for %%F in (*.apk) do (
+  echo %%~nF | findstr /i /c:"patched" /c:"signed" /c:"aligned" >nul || (
+    if not defined APK set "APK=%%F"
+  )
+)
+if not defined APK (
+  echo [X] No source .apk found here. Put the game apk in this folder and re-run.
+  goto :fail
+)
+echo [*] APK:  !APK!
+for %%A in ("!APK!") do set "BASE=%%~nA"
+
+REM ---- NCS-only guard: the apk's manifest must mention Nightclub Simulator ---
+where python >nul 2>&1 || ( echo [X] Python not found on PATH. Install Python 3. & goto :fail )
+python -c "import sys,zipfile;d=zipfile.ZipFile(sys.argv[1]).read('AndroidManifest.xml');t=d.decode('utf-16-le','ignore').lower();sys.exit(0 if (sys.argv[2] in t) else 2)" "!APK!" "%ONLY_TOKEN%"
+if errorlevel 1 (
+  echo [X] This apk is not Nightclub Simulator ^(manifest has no "%ONLY_TOKEN%"^).
+  echo     This injector is NCS-only and will not patch other games.
+  goto :fail
+)
+echo [*] Verified: Nightclub Simulator.
+
+REM ---- prerequisites --------------------------------------------------------
+where java   >nul 2>&1 || ( echo [X] Java not found on PATH. Install a JDK/JRE.        & goto :fail )
+where python >nul 2>&1 || ( echo [X] Python not found on PATH. Install Python 3.        & goto :fail )
+where curl   >nul 2>&1 || ( echo [X] curl not found (needs Windows 10 1803+).           & goto :fail )
+
+python -c "import lief" 1>nul 2>nul
+if errorlevel 1 (
+  echo [*] Installing LIEF (one time)...
+  python -m pip install --quiet --upgrade lief || ( echo [X] pip install lief failed. & goto :fail )
+)
+
+if not exist "%TOOLS%" mkdir "%TOOLS%"
+
+REM ---- download apktool ------------------------------------------------------
+set "APKTOOL=%TOOLS%\apktool.jar"
+if not exist "%APKTOOL%" (
+  echo [*] Downloading apktool...
+  %PS% "[Net.ServicePointManager]::SecurityProtocol='Tls12'; $a=(Invoke-RestMethod 'https://api.github.com/repos/iBotPeaches/Apktool/releases/latest').assets | Where-Object { $_.name -like 'apktool_*.jar' } | Select-Object -First 1; if(-not $a){ throw 'apktool asset not found' }; Invoke-WebRequest $a.browser_download_url -OutFile '%APKTOOL%'"
+  if errorlevel 1 ( echo [X] apktool download failed. & goto :fail )
+)
+
+REM ---- download uber-apk-signer ---------------------------------------------
+set "SIGNER=%TOOLS%\uber-apk-signer.jar"
+if not exist "%SIGNER%" (
+  echo [*] Downloading uber-apk-signer...
+  %PS% "[Net.ServicePointManager]::SecurityProtocol='Tls12'; $a=(Invoke-RestMethod 'https://api.github.com/repos/patrickfav/uber-apk-signer/releases/latest').assets | Where-Object { $_.name -like 'uber-apk-signer-*.jar' } | Select-Object -First 1; if(-not $a){ throw 'signer asset not found' }; Invoke-WebRequest $a.browser_download_url -OutFile '%SIGNER%'"
+  if errorlevel 1 ( echo [X] uber-apk-signer download failed. & goto :fail )
+)
+
+REM ---- download + decompress Frida Gadget -----------------------------------
+set "GADGET_XZ=%TOOLS%\%GADGET%.xz"
+set "GADGET_SO=%TOOLS%\%GADGET%"
+if not exist "%GADGET_SO%" (
+  echo [*] Downloading latest Frida Gadget (android-%FRIDA_ABI%)...
+  %PS% "[Net.ServicePointManager]::SecurityProtocol='Tls12'; $a=(Invoke-RestMethod 'https://api.github.com/repos/frida/frida/releases/latest').assets | Where-Object { $_.name -like '*-android-%FRIDA_ABI%.so.xz' } | Select-Object -First 1; if(-not $a){ throw 'gadget asset not found' }; Write-Host ('    ' + $a.name); Invoke-WebRequest $a.browser_download_url -OutFile '%GADGET_XZ%'"
+  if errorlevel 1 ( echo [X] gadget download failed. & goto :fail )
+  echo [*] Decompressing gadget...
+  python -c "import lzma;open(r'%GADGET_SO%','wb').write(lzma.open(r'%GADGET_XZ%').read())" || ( echo [X] gadget decompress failed. & goto :fail )
+)
+
+REM ---- unpack the apk (keep resources + dex untouched: -s -r) ----------------
+echo [*] Unpacking apk...
+if exist "%WORK%" rmdir /s /q "%WORK%"
+java -jar "%APKTOOL%" d -s -r -f "!APK!" -o "%WORK%" || ( echo [X] apktool decode failed. & goto :fail )
+
+set "LIBDIR=%WORK%\lib\%ARCH%"
+if not exist "%LIBDIR%" (
+  echo [X] This apk has no lib\%ARCH% folder - it may not be a 64-bit build.
+  goto :fail
+)
+
+REM ---- choose the library to patch ------------------------------------------
+set "TARGET="
+for %%L in (%LIB_CANDIDATES%) do (
+  if not defined TARGET if exist "%LIBDIR%\%%L" set "TARGET=%%L"
+)
+if not defined TARGET (
+  echo [X] None of (%LIB_CANDIDATES%) found in lib\%ARCH%.
+  goto :fail
+)
+echo [*] Will patch: %TARGET%
+
+REM ---- drop the gadget + its config next to the libs ------------------------
+copy /y "%GADGET_SO%" "%LIBDIR%\%GADGET%" >nul || ( echo [X] couldn't copy gadget. & goto :fail )
+python -c "open(r'%LIBDIR%\libgadget.config.so','w').write('{\"interaction\":{\"type\":\"script\",\"path\":\"%SCRIPT_DEV_PATH%\",\"on_change\":\"reload\"}}')" || ( echo [X] couldn't write gadget config. & goto :fail )
+echo [*] Gadget + config placed in lib\%ARCH%.
+
+REM ---- patch the target lib to load the gadget (adds a DT_NEEDED entry) ------
+echo [*] Patching %TARGET% to load %GADGET%...
+python -c "import lief;p=r'%LIBDIR%\%TARGET%';b=lief.parse(p);[b.add_library('%GADGET%') for _ in [0] if '%GADGET%' not in [x.name for x in b.libraries]];b.write(p)" || ( echo [X] LIEF patch failed. & goto :fail )
+
+REM ---- optional: build the combined agent.js to push to the device ----------
+if exist "%BRIDGE_JS%" if exist "%MENU_JS%" (
+  echo [*] Building agent.js (%BRIDGE_JS% + %MENU_JS%)...
+  copy /b /y "%BRIDGE_JS%" + "%MENU_JS%" "agent.js" >nul
+)
+
+REM ---- repack ---------------------------------------------------------------
+echo [*] Repacking...
+set "UNSIGNED=%BASE%-unsigned.apk"
+if exist "%UNSIGNED%" del /q "%UNSIGNED%"
+java -jar "%APKTOOL%" b "%WORK%" -o "%UNSIGNED%" || ( echo [X] apktool build failed. & goto :fail )
+
+REM ---- align + sign (uber-apk-signer zipaligns too) -------------------------
+echo [*] Signing...
+java -jar "%SIGNER%" -a "%UNSIGNED%" --allowResign --overwrite || ( echo [X] signing failed. & goto :fail )
+set "OUT=%BASE%-patched.apk"
+if exist "%OUT%" del /q "%OUT%"
+ren "%UNSIGNED%" "%OUT%" 2>nul
+
+echo.
+echo  ===== DONE =====
+echo   Patched apk : %OUT%
+if exist "agent.js" echo   Agent script: agent.js  (push this to the device)
+echo.
+echo  Install it:
+echo    adb uninstall ^<the game's package name^>      ^(signature differs from the store build^)
+echo    adb install "%OUT%"
+if exist "agent.js" (
+  echo    adb push agent.js %SCRIPT_DEV_PATH%
+) else (
+  echo    REM build your agent, then:  adb push ^<agent^>.js %SCRIPT_DEV_PATH%
+  echo    REM   ^(the gadget runs ONE combined .js; concat the il2cpp bridge + your compiled menu^)
+)
+echo  Launch the game - the gadget auto-runs the script; editing it on the PC and
+echo  re-pushing reloads it live ^("on_change":"reload"^).
+echo.
+
+REM ---- offer to install if a device is attached -----------------------------
+where adb >nul 2>&1 && (
+  echo( & choice /c YN /m "Install the patched apk now (adb)"
+  if not errorlevel 2 (
+    adb install -r "%OUT%"
+    if exist "agent.js" adb push agent.js %SCRIPT_DEV_PATH%
+  )
+)
+
+echo.
+pause
+exit /b 0
+
+:fail
+echo.
+echo  ===== FAILED - see the message above. =====
+echo.
+pause
+exit /b 1
